@@ -1,8 +1,10 @@
 package connection
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,9 +13,17 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/cloudflare/cloudflared/tunnelrpc/pogs"
+	"github.com/cloudflare/cloudflared/websocket"
 )
 
-const LogFieldConnIndex = "connIndex"
+const (
+	lbProbeUserAgentPrefix = "Mozilla/5.0 (compatible; Cloudflare-Traffic-Manager/1.0; +https://www.cloudflare.com/traffic-manager/;"
+	LogFieldConnIndex      = "connIndex"
+	MaxGracePeriod         = time.Minute * 3
+	MaxConcurrentStreams   = math.MaxUint32
+)
+
+var switchingProtocolText = fmt.Sprintf("%d %s", http.StatusSwitchingProtocols, http.StatusText(http.StatusSwitchingProtocols))
 
 type Config struct {
 	OriginProxy     OriginProxy
@@ -22,8 +32,9 @@ type Config struct {
 }
 
 type NamedTunnelConfig struct {
-	Credentials Credentials
-	Client      pogs.ClientInfo
+	Credentials    Credentials
+	Client         pogs.ClientInfo
+	QuickTunnelUrl string
 }
 
 // Credentials are stored in the credentials file and contain all info needed to run a tunnel.
@@ -46,10 +57,6 @@ type ClassicTunnelConfig struct {
 	OriginCert []byte
 	// feature-flag to use new edge reconnect tokens
 	UseReconnectToken bool
-}
-
-func (c *ClassicTunnelConfig) IsTrialZone() bool {
-	return c.Hostname == ""
 }
 
 // Type indicates the connection type of the  connection.
@@ -87,9 +94,64 @@ func (t Type) String() string {
 	}
 }
 
+// OriginProxy is how data flows from cloudflared to the origin services running behind it.
 type OriginProxy interface {
-	// If Proxy returns an error, the caller is responsible for writing the error status to ResponseWriter
-	Proxy(w ResponseWriter, req *http.Request, sourceConnectionType Type) error
+	ProxyHTTP(w ResponseWriter, req *http.Request, isWebsocket bool) error
+	ProxyTCP(ctx context.Context, rwa ReadWriteAcker, req *TCPRequest) error
+}
+
+// TCPRequest defines the input format needed to perform a TCP proxy.
+type TCPRequest struct {
+	Dest    string
+	CFRay   string
+	LBProbe bool
+}
+
+// ReadWriteAcker is a readwriter with the ability to Acknowledge to the downstream (edge) that the origin has
+// accepted the connection.
+type ReadWriteAcker interface {
+	io.ReadWriter
+	AckConnection() error
+}
+
+// HTTPResponseReadWriteAcker is an HTTP implementation of ReadWriteAcker.
+type HTTPResponseReadWriteAcker struct {
+	r   io.Reader
+	w   ResponseWriter
+	req *http.Request
+}
+
+// NewHTTPResponseReadWriterAcker returns a new instance of HTTPResponseReadWriteAcker.
+func NewHTTPResponseReadWriterAcker(w ResponseWriter, req *http.Request) *HTTPResponseReadWriteAcker {
+	return &HTTPResponseReadWriteAcker{
+		r:   req.Body,
+		w:   w,
+		req: req,
+	}
+}
+
+func (h *HTTPResponseReadWriteAcker) Read(p []byte) (int, error) {
+	return h.r.Read(p)
+}
+
+func (h *HTTPResponseReadWriteAcker) Write(p []byte) (int, error) {
+	return h.w.Write(p)
+}
+
+// AckConnection acks an HTTP connection by sending a switch protocols status code that enables the caller to
+// upgrade to streams.
+func (h *HTTPResponseReadWriteAcker) AckConnection() error {
+	resp := &http.Response{
+		Status:        switchingProtocolText,
+		StatusCode:    http.StatusSwitchingProtocols,
+		ContentLength: -1,
+	}
+
+	if secWebsocketKey := h.req.Header.Get("Sec-WebSocket-Key"); secWebsocketKey != "" {
+		resp.Header = websocket.NewResponseHeader(h.req)
+	}
+
+	return h.w.WriteRespHeaders(resp.StatusCode, resp.Header)
 }
 
 type ResponseWriter interface {
@@ -111,4 +173,12 @@ func IsServerSentEvent(headers http.Header) bool {
 
 func uint8ToString(input uint8) string {
 	return strconv.FormatUint(uint64(input), 10)
+}
+
+func FindCfRayHeader(req *http.Request) string {
+	return req.Header.Get("Cf-Ray")
+}
+
+func IsLBProbeRequest(req *http.Request) bool {
+	return strings.HasPrefix(req.UserAgent(), lbProbeUserAgentPrefix)
 }

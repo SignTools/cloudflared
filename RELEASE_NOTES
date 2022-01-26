@@ -1,3 +1,252 @@
+2022.1.2
+- 2022-01-13 TUN-5650: Fix pynacl version to 1.4.0 and pygithub version to 1.55 so release doesn't break unexpectedly
+
+2022.1.1
+- 2022-01-10 TUN-5631: Build everything with go 1.17.5
+- 2022-01-06 TUN-5623: Configure quic max datagram frame size to 1350 bytes for none Windows platforms
+
+2022.1.0
+- 2022-01-03 TUN-5612: Add support for specifying TLS min/max version
+- 2022-01-03 TUN-5612: Make tls min/max version public visible
+- 2022-01-03 TUN-5551: Internally published debian artifacts are now named just cloudflared even though they are FIPS compliant
+- 2022-01-04 TUN-5600: Close QUIC transports as soon as possible while respecting graceful shutdown
+- 2022-01-05 TUN-5616: Never fallback transport if user chooses it on purpose
+- 2022-01-05 TUN-5204: Unregister QUIC transports on disconnect
+- 2022-01-04 TUN-5600: Add coverage to component tests for various transports
+
+2021.12.4
+- 2021-12-27 TUN-5482: Refactor tunnelstore client related packages for more coherent package
+- 2021-12-27 TUN-5551: Change internally published debian package to be FIPS compliant
+- 2021-12-27 TUN-5551: Show whether the binary was built for FIPS compliance
+
+2021.12.3
+- 2021-12-22 TUN-5584: Changes for release 2021.12.2
+- 2021-12-22 TUN-5590: QUIC datagram max user payload is 1217 bytes
+- 2021-12-22 TUN-5593: Read full packet from UDP connection, even if it exceeds MTU of the transport. When packet length is greater than the MTU of the transport, we will silently drop packets (for now).
+- 2021-12-23 TUN-5597: Log session ID when session is terminated by edge
+
+2021.12.2
+- 2021-12-20 TUN-5571: Remove redundant session manager log, it's already logged in origin/tunnel.ServeQUIC
+- 2021-12-20 TUN-5570: Only log RPC server events at error level to reduce noise
+- 2021-12-14 TUN-5494: Send a RPC with terminate reason to edge if the session is closed locally
+- 2021-11-09 TUN-5551: Reintroduce FIPS compliance for linux amd64 now as separate binaries
+
+2021.12.1
+- 2021-12-16 TUN-5549: Revert "TUN-5277: Ensure cloudflared binary is FIPS compliant on linux amd64"
+
+2021.12.0
+- 2021-12-13 TUN-5530: Get current time from ticker
+- 2021-12-15 TUN-5544: Update CHANGES.md for next release
+- 2021-12-07 TUN-5519: Adjust URL for virtual_networks endpoint to match what we will publish
+- 2021-12-02 TUN-5488: Close session after it's idle for a period defined by registerUdpSession RPC
+- 2021-12-09 TUN-5504: Fix upload of packages to public repo
+- 2021-11-30 TUN-5481: Create abstraction for Origin UDP Connection
+- 2021-11-30 TUN-5422: Define RPC to unregister session
+- 2021-11-26 TUN-5361: Commands for managing virtual networks
+- 2021-11-29 TUN-5362: Adjust route ip commands to be aware of virtual networks
+- 2021-11-23 TUN-5301: Separate datagram multiplex and session management logic from quic connection logic
+- 2021-11-10 TUN-5405: Update net package to v0.0.0-20211109214657-ef0fda0de508
+- 2021-11-10 TUN-5408: Update quic package to v0.24.0
+- 2021-11-12 Fix typos
+- 2021-11-13 Fix for Issue #501: Unexpected User-agent insertion when tunneling http request
+- 2021-11-16 TUN-5129: Remove `-dev` suffix when computing version and Git has uncommitted changes
+- 2021-11-18 TUN-5441: Fix message about available protocols
+- 2021-11-12 TUN-5300: Define RPC to register UDP sessions
+- 2021-11-14 TUN-5299: Send/receive QUIC datagram from edge and proxy to origin as UDP
+- 2021-11-04 TUN-5387: Updated CHANGES.md for 2021.11.0
+- 2021-11-08 TUN-5368: Log connection issues with LogLevel that depends on tunnel state
+- 2021-11-09 TUN-5397: Log cloudflared output when it fails to connect tunnel
+- 2021-11-09 TUN-5277: Ensure cloudflared binary is FIPS compliant on linux amd64
+- 2021-11-08 TUN-5393: Content-length is no longer a control header for non-h2mux transports
+
+2021.11.0
+- 2021-11-03 TUN-5285: Fallback to HTTP2 immediately if connection times out with no network activity
+- 2021-09-29 Add flag to 'tunnel create' subcommand to specify a base64-encoded secret
+
+2021.10.5
+- 2021-10-25 Update change log for release 2021.10.4
+- 2021-10-25 Revert "TUN-5184: Make sure outstanding websocket write is finished, and no more writes after shutdown"
+
+2021.10.4
+- 2021-10-21 TUN-5287: Fix misuse of wait group in TestQUICServer that caused the test to exit immediately
+- 2021-10-21 TUN-5286: Upgrade crypto/ssh package to fix CVE-2020-29652
+- 2021-10-18 TUN-5262: Allow to configure max fetch size for listing queries
+- 2021-10-19 TUN-5262: Improvements to `max-fetch-size` that allow to deal with large number of tunnels in account
+- 2021-10-15 TUN-5261: Collect QUIC metrics about RTT, packets and bytes transfered and log events at tracing level
+- 2021-10-19 TUN-5184: Make sure outstanding websocket write is finished, and no more writes after shutdown
+
+2021.10.3
+- 2021-10-14 TUN-5255: Fix potential panic if Cloudflare API fails to respond to GetTunnel(id) during delete command
+- 2021-10-14 TUN-5257: Fix more cfsetup targets that were broken by recent package changes
+
+2021.10.2
+- 2021-10-11 TUN-5138: Switch to QUIC on auto protocol based on threshold
+- 2021-10-14 TUN-5250: Add missing packages for cfsetup to succeed in github release pkgs target
+
+2021.10.1
+- 2021-10-12 TUN-5246: Use protocol: quic for Quick tunnels if one is not already set
+- 2021-10-13 TUN-5249: Revert "TUN-5138: Switch to QUIC on auto protocol based on threshold"
+
+2021.10.0
+- 2021-10-11 TUN-5138: Switch to QUIC on auto protocol based on threshold
+- 2021-10-07 TUN-5195: Do not set empty body if not applicable
+- 2021-10-08 UN-5213: Increase MaxStreams value for QUIC transport
+- 2021-09-28 TUN-5169: Release 2021.9.2 CHANGES.md
+- 2021-09-28 TUN-5164: Update README and clean up references to Argo Tunnel (using Cloudflare Tunnel instead)
+
+2021.9.2
+- 2021-09-21 TUN-5129: Use go 1.17 and copy .git folder to docker build to compute version
+- 2021-09-21 TUN-5128: Enforce maximum grace period
+- 2021-09-22 TUN-5141: Make sure websocket pinger returns before streaming returns
+- 2021-09-24 TUN-5142: Add asynchronous servecontrolstream for QUIC
+- 2021-09-24 TUN-5142: defer close rpcconn inside unregister instead of ServeControlStream
+- 2021-09-27 TUN-5160: Set request.ContentLength when this value is in request header
+
+2021.9.1
+- 2021-09-21 TUN-5118: Quic connection now detects duplicate connections similar to http2
+- 2021-09-15 Fix TryCloudflare link
+
+2021.9.0
+- 2021-09-02 Fix broken TryCloudflare link
+- 2021-09-03 Add support for taking named tunnel credentials from an environment variable
+- 2021-08-30 TUN-5012: Use patched go-sumtype
+- 2021-08-31 TUN-5011: Use the region parameter in fallback SRV lookup
+- 2021-08-31 TUN-5029: Do not strip cf- prefixed headers
+- 2021-08-29 TUN-5009: Updated github action to use go 1.17.x for checks
+- 2021-08-28 TUN-5010: --region should be a string flag
+- 2021-08-10 Allow building on arm64 platforms
+- 2021-06-09 Update README.md
+- 2021-05-31 🖌️ Allow providing TokenID and TokenSecret as env vars when calling cloudflared access
+- 2021-05-31 🎨 Prefix env var parameters with TUNNEL
+
+2021.8.7
+- 2021-08-28 Revert "TUN-4926: Implement --region configuration option"
+
+2021.8.6
+- 2021-08-27 TUN-5000: De-flake logging to dir component test in Windows by increasing to buffer to cope with more logging
+- 2021-08-27 TUN-5003: Fix cfsetup for non-FIPS golang version
+
+2021.8.5
+- 2021-08-27 TUN-4961: Update quic-go to latest
+- 2021-08-27 Release 2021.8.4
+
+2021.8.4
+- 2021-08-26 TUN-4974: Fix regression where we were debug logging by accident
+- 2021-08-26 TUN-4970: Only default to http2 for warp-routing if protocol is h2mux
+- 2021-08-26 TUN-4981: Improve readability of prepareTunnelConfig method
+- 2021-08-26 TUN-4926: Implement --region configuration option
+- 2021-07-09 TUN-4821: Make quick tunnels the default in cloudflared
+
+2021.8.3
+- 2021-08-23 TUN-4889: Add back appendtagheaders function
+- 2021-08-21 TUN-4940: Fix cloudflared not picking up correct NextProtos for quic
+- 2021-08-21 TUN-4613: Add a no-op protocol version slot
+- 2021-08-13 TUN-4922: Downgrade quic-go library to 0.20.0
+- 2021-08-17 TUN-4866: Add Control Stream for QUIC
+- 2021-08-17 TUN-4927: Parameterize region in edge discovery code
+- 2021-08-06 TUN-4602: Added UDP resolves to Edge discovery
+
+2021.8.2
+- 2021-08-03 TUN-4597: Added HTTPProxy for QUIC
+- 2021-08-04 TUN-4795: Remove Equinox releases
+- 2021-08-09 TUN-4911: Append Environment variable to Path instead of overwriting it
+
+2021.8.1
+- 2021-08-02 TUN-4855: Added CHANGES.md for release 2021.8.0
+- 2021-08-03 TUN-4597: Add a QUIC server skeleton
+- 2021-08-03 TUN-4873: Disable unix domain socket test for windows unit tests
+- 2021-08-04 TUN-4875: Added amd64-linux builds back to releases
+
+2021.8.0
+- 2021-07-30 TUN-4847: Allow to list tunnels by prefix name or exclusion prefix name
+- 2021-07-30 TUN-4772: Release built executables with packages
+- 2021-07-30 TUN-4851: Component tests to smoke test that Proxy DNS and Tunnel are only run when expected
+- 2021-07-28 TUN-4811: Publish quick tunnels' hostname in /metrics under `userHostname` for backwards-compatibility
+- 2021-07-29 TUN-4832: Prevent tunnel from running accidentally when only proxy-dns should run
+- 2021-07-28 TUN-4819: Tolerate protocol TXT record lookup failing
+
+2021.7.4
+- 2021-07-28 TUN-4814: Revert "TUN-4699: Make quick tunnels the default in cloudflared"
+- 2021-07-28 TUN-4812: Disable CGO for cloudflared builds
+
+2021.7.3
+- 2021-07-27 TUN-4799: Build deb, msi and rpm packages with fips
+
+2021.7.2
+- 2021-07-27 Fixed a syntax error with python logging.
+
+2021.7.1
+- 2021-07-21 TUN-4755: Add a windows msi release option to Make
+- 2021-07-22 TUN-4761: Added a build-all-packages target to cfsetup
+- 2021-07-26 TUN-4771: Upload deb, rpm and msi packages to github
+- 2021-07-14 TUN-4714: Name nightly package cloudflared-nightly to avoid apt conflict
+- 2021-07-16 TUN-4701: Split Proxy into ProxyHTTP and ProxyTCP
+- 2021-07-08 TUN-4596: Add QUIC application protocol for QUIC stream handshake
+- 2021-07-09 TUN-4699: Make quick tunnels the default in cloudflared
+
+2021.7.0
+- 2021-07-01 TUN-4626: Proxy non-stream based origin websockets with http Roundtrip.
+- 2021-07-01 TUN-4655: ingress.StreamBasedProxy.EstablishConnection takes dest input
+- 2021-07-09 TUN-4698: Add cloudflared metrics endpoint to serve quick tunnel hostname
+- 2021-06-21 TUN-4521: Modify cloudflared to use zoneless-tunnels-worker for free tunnels
+- 2021-04-05 AUTH-3475: Updated GetAppInfo error message
+
+2021.6.0
+- 2021-06-21 TUN-4571: Changelog for 2021.6.0
+- 2021-06-18 TUN-4571: Fix proxying to unix sockets when using HTTP2 transport to Cloudflare Edge
+- 2021-06-07 TUN-4502: Make `cloudflared tunnel route` subcommands described consistently
+- 2021-06-08 TUN-4504: Fix component tests in windows
+- 2021-05-27 TUN-4461: Log resulting DNS hostname if one is received from Cloudflare API
+
+2021.5.10
+- 2021-05-25 TUN-4456: Replaced instances of Tick() with Ticker() in h2mux paths
+
+2021.5.9
+- 2021-05-20 TUN-4426: Fix centos builds
+- 2021-05-20 Update changelog
+- 2021-04-30 AUTH-3426: Point to new transfer service URL and eliminate PUT /ok
+
+2021.5.8
+- 2021-05-14 TUN-4419: Improve error message when cloudflared cannot reach origin
+- 2021-05-19 TUN-4425: --overwrite-dns flag for in adhoc and route dns cmds
+
+2021.5.7
+- 2021-05-17 Fix typo in Changes.md
+- 2021-05-17 TUN-4421: Named Tunnels will automatically select the protocol to connect to Cloudflare's edge network
+
+2021.5.6
+- 2021-05-14 TUN-4418: Downgrade to Go 1.16.3
+
+2021.5.5
+
+
+2021.5.4
+- Fix release pipeline
+
+2021.5.1
+- 2021-05-10 TUN-4342: Fix false positive warning about unused hostname property
+- 2021-05-10 Release 2021.5.0
+
+2021.5.0
+- 2021-05-10 TUN-4384: Silence log from automaxprocs
+- 2021-05-10 AUTH-3537: AUDs in JWTs are now always arrays
+- 2021-05-10 Update changelog for 2021.5.0
+- 2021-05-03 TUN-4343: Fix broken build by setting debug field correctly
+- 2021-05-06 TUN-4356: Set AUTOMAXPROCS to the CPU limit when running in a Linux container
+- 2021-05-06 TUN-4357: Bump Go to 1.16
+- 2021-05-06 TUN-4359: Warn about unused keys in 'tunnel ingress validate'
+- 2021-04-30 debug: log host / path
+- 2021-04-20 AUTH-3513: Checks header for app info in case response is a 403/401 from the edge
+- 2021-04-29 TUN-4000: Release notes for cloudflared replica model
+- 2021-04-09 TUN-2853: rename STDIN-CONTROL env var to STDIN_CONTROL
+- 2021-04-09 TUN-4206: Better error message when user is only using one ingress rule
+
+2021.4.0
+- 2021-04-05 TUN-4178: Fix component test for running as a service in MacOS to not assume a named tunnel
+- 2021-04-05 TUN-4177: Running with proxy-dns should not prevent running Named Tunnels
+- 2021-04-02 TUN-4168: Transparently proxy websocket connections using stdlib HTTP client instead of gorilla/websocket; move websocket client code into carrier package since it's only used by access subcommands now (#345).
+- 2021-04-07 Publish change log for 2021.4.0
+
 2021.3.6
 - 2021-03-30 TUN-4150: Only show the connector table in 'tunnel info' if there are connectors. Don't show rows with zero connections.
 - 2021-03-31 TUN-4153: Revert best-effort HTTP2 usage when talking to origins

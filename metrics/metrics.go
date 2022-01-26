@@ -22,7 +22,7 @@ const (
 	startupTime     = time.Millisecond * 500
 )
 
-func newMetricsHandler(readyServer *ReadyServer) *mux.Router {
+func newMetricsHandler(readyServer *ReadyServer, quickTunnelHostname string) *mux.Router {
 	router := mux.NewRouter()
 	router.PathPrefix("/debug/").Handler(http.DefaultServeMux)
 
@@ -33,6 +33,9 @@ func newMetricsHandler(readyServer *ReadyServer) *mux.Router {
 	if readyServer != nil {
 		router.Handle("/ready", readyServer)
 	}
+	router.HandleFunc("/quicktunnel", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"hostname":"%s"}`, quickTunnelHostname)
+	})
 
 	return router
 }
@@ -41,6 +44,7 @@ func ServeMetrics(
 	l net.Listener,
 	shutdownC <-chan struct{},
 	readyServer *ReadyServer,
+	quickTunnelHostname string,
 	log *zerolog.Logger,
 ) (err error) {
 	var wg sync.WaitGroup
@@ -48,7 +52,7 @@ func ServeMetrics(
 	trace.AuthRequest = func(*http.Request) (bool, bool) { return true, true }
 	// TODO: parameterize ReadTimeout and WriteTimeout. The maximum time we can
 	// profile CPU usage depends on WriteTimeout
-	h := newMetricsHandler(readyServer)
+	h := newMetricsHandler(readyServer, quickTunnelHostname)
 	server := &http.Server{
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -79,15 +83,15 @@ func ServeMetrics(
 	return err
 }
 
-func RegisterBuildInfo(buildTime string, version string) {
+func RegisterBuildInfo(buildType, buildTime, version string) {
 	buildInfo := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			// Don't namespace build_info, since we want it to be consistent across all Cloudflare services
 			Name: "build_info",
 			Help: "Build and version information",
 		},
-		[]string{"goversion", "revision", "version"},
+		[]string{"goversion", "type", "revision", "version"},
 	)
 	prometheus.MustRegister(buildInfo)
-	buildInfo.WithLabelValues(runtime.Version(), buildTime, version).Set(1)
+	buildInfo.WithLabelValues(runtime.Version(), buildType, buildTime, version).Set(1)
 }

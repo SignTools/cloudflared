@@ -33,6 +33,8 @@ type h2muxConnection struct {
 	gracefulShutdownC <-chan struct{}
 	stoppedGracefully bool
 
+	log *zerolog.Logger
+
 	// newRPCClientFunc allows us to mock RPCs during testing
 	newRPCClientFunc func(context.Context, io.ReadWriteCloser, *zerolog.Logger) NamedTunnelRPCClient
 }
@@ -167,7 +169,8 @@ func (h *h2muxConnection) serveMuxer(ctx context.Context) error {
 }
 
 func (h *h2muxConnection) controlLoop(ctx context.Context, connectedFuse ConnectedFuse, isNamedTunnel bool) {
-	updateMetricsTickC := time.Tick(h.muxerConfig.MetricsUpdateFreq)
+	updateMetricsTicker := time.NewTicker(h.muxerConfig.MetricsUpdateFreq)
+	defer updateMetricsTicker.Stop()
 	var shutdownCompleted <-chan struct{}
 	for {
 		select {
@@ -191,7 +194,7 @@ func (h *h2muxConnection) controlLoop(ctx context.Context, connectedFuse Connect
 			// don't wait for shutdown to finish when context is closed, this is the hard termination path
 			return
 
-		case <-updateMetricsTickC:
+		case <-updateMetricsTicker.C:
 			h.observer.metrics.updateMuxerMetrics(h.connIndexStr, h.muxer.Metrics())
 		}
 	}
@@ -221,12 +224,11 @@ func (h *h2muxConnection) ServeStream(stream *h2mux.MuxedStream) error {
 		sourceConnectionType = TypeWebsocket
 	}
 
-	err := h.config.OriginProxy.Proxy(respWriter, req, sourceConnectionType)
+	err := h.config.OriginProxy.ProxyHTTP(respWriter, req, sourceConnectionType == TypeWebsocket)
 	if err != nil {
 		respWriter.WriteErrorResponse()
-		return err
 	}
-	return nil
+	return err
 }
 
 func (h *h2muxConnection) newRequest(stream *h2mux.MuxedStream) (*http.Request, error) {

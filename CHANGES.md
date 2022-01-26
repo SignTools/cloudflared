@@ -1,5 +1,121 @@
 **Experimental**: This is a new format for release notes. The format and availability is subject to change.
 
+## 2021.12.2
+### Bug Fixes
+- Fix logging when `quic` transport is used and UDP traffic is proxied.
+- FIPS compliant cloudflared binaries will now be released as separate artifacts. Recall that these are only for linux
+and amd64.
+
+## 2021.12.1
+### Bug Fixes
+ - Fixes Github issue #530 where cloudflared 2021.12.0 could not reach origins that were HTTPS and using certain encryption
+methods forbidden by FIPS compliance (such as Let's Encrypt certificates). To address this fix we have temporarily reverted
+FIPS compliance from amd64 linux binaries that was recently introduced (or fixed actually as it was never working before).
+
+## 2021.12.0
+### New Features
+- Cloudflared binary released for amd64 linux is now FIPS compliant.
+
+### Improvements
+- Logging about connectivity to Cloudflare edge now only yields `ERR` level logging if there are no connections to
+Cloudflare edge that are active. Otherwise it logs `WARN` level.
+ 
+### Bug Fixes
+- Fixes Github issue #501.
+
+## 2021.11.0
+### Improvements
+- Fallback from `protocol:quic` to `protocol:http2` immediately if UDP connectivity isn't available. This could be because of a firewall or 
+egress rule.
+
+## 2021.10.4
+### Improvements
+- Collect quic transport metrics on RTT, packets and bytes transferred.
+
+### Bug Fixes
+- Fix race condition that was writing to the connection after the http2 handler returns.
+
+## 2021.9.2
+
+### New features
+- `cloudflared` can now run with `quic` as the underlying tunnel transport protocol. To try it, change or add "protocol: quic" to your config.yml file or
+run cloudflared with the `--protocol quic` flag. e.g:
+    `cloudflared tunnel --protocol quic run <tunnel-name>`
+
+### Bug Fixes
+- Fixed some generic transport bugs in `quic` mode. It's advised to upgrade to at least this version (2021.9.2) when running `cloudflared`
+with `quic` protocol.
+- `cloudflared` docker images will now show version.
+
+
+## 2021.8.4
+### Improvements
+- Temporary tunnels (those hosted on trycloudflare.com that do not require a Cloudflare login) now run as Named Tunnels
+underneath. We recall that these tunnels should not be relied upon for production usage as they come with no guarantee
+of uptime. Previous cloudflared versions will soon be unable to run legacy temporary tunnels and will require an update
+(to this version or more recent).
+
+## 2021.8.2
+### Improvements
+- Because Equinox os shutting down, all cloudflared releases are now present [here](https://github.com/cloudflare/cloudflared/releases).
+[Equinox](https://dl.equinox.io/cloudflare/cloudflared/stable) will no longer receive updates. 
+
+## 2021.8.0
+### Bug fixes
+- Prevents tunnel from accidentally running when only proxy-dns should run. 
+
+### Improvements
+- If auto protocol transport lookup fails, we now default to a transport instead of not connecting.
+
+## 2021.6.0
+### Bug Fixes
+- Fixes a http2 transport (the new default for Named Tunnels) to work with unix socket origins.
+
+
+## 2021.5.10
+### Bug Fixes
+- Fixes a memory leak in h2mux transport that connects cloudflared to Cloudflare edge.
+
+
+## 2021.5.9
+### New Features
+- Uses new Worker based login helper service to facilitate token exchange in cloudflared flows.
+
+### Bug Fixes
+- Fixes Centos-7 builds.
+
+## 2021.5.8
+### New Features
+- When creating a DNS record to point a hostname at a tunnel, you can now use --overwrite-dns to overwrite any existing
+  DNS records with that hostname. This works both when using the CLI to provision DNS, as well as when starting an adhoc
+  named tunnel, e.g.:
+  - `cloudflared tunnel route dns --overwrite-dns foo-tunnel foo.example.com`
+  - `cloudflared tunnel --overwrite-dns --name foo-tunnel --hostname foo.example.com`
+
+## 2021.5.7
+### New Features
+- Named Tunnels will automatically select the protocol to connect to Cloudflare's edge network.
+
+## 2021.5.0
+
+### New Features
+- It is now possible to run the same tunnel using more than one `cloudflared` instance. This is a server-side change and
+  is compatible with any client version that uses Named Tunnels.
+
+  To get started, visit our [developer documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/run-tunnel/deploy-cloudflared-replicas).
+- `cloudflared tunnel ingress validate` will now warn about unused keys in your config file. This is helpful for
+  detecting typos in your config.
+- If `cloudflared` detects it is running inside a Linux container, it will limit itself to use only the number of CPUs
+  the pod has been granted, instead of trying to use every CPU available.
+
+## 2021.4.0
+
+### Bug Fixes
+
+- Fixed proxying of websocket requests to avoid possibility of losing initial frames that were sent in the same TCP
+  packet as response headers [#345](https://github.com/cloudflare/cloudflared/issues/345).
+- `proxy-dns` option now works in conjunction with running a named tunnel [#346](https://github.com/cloudflare/cloudflared/issues/346).
+
 ## 2021.3.6
 
 ### Bug Fixes
@@ -23,7 +139,7 @@
 ### Improvements
 
 - Tunnel create command, as well as, running ad-hoc tunnels using `cloudflared tunnel -name NAME`, will not overwrite
-  existing files when writing tunnel credentials. 
+  existing files when writing tunnel credentials.
 
 ### Bug Fixes
 
@@ -69,7 +185,7 @@ ingress:
           ports: [80, 443]
           allow: true
 ```
-  
+
 
 ### Improvements
 
@@ -121,4 +237,3 @@ ingress:
 
 - The maximum number of upstream connections is now limited by default which should fix reported issues of cloudflared
   exhausting CPU usage when faced with connectivity issues.
-

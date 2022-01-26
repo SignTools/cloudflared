@@ -21,7 +21,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
 
-	"github.com/cloudflare/cloudflared/cmd/cloudflared/buildinfo"
+	"github.com/cloudflare/cloudflared/cfapi"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/cliutil"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/proxydns"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/ui"
@@ -35,7 +35,6 @@ import (
 	"github.com/cloudflare/cloudflared/signal"
 	"github.com/cloudflare/cloudflared/tlsconfig"
 	"github.com/cloudflare/cloudflared/tunneldns"
-	"github.com/cloudflare/cloudflared/tunnelstore"
 )
 
 const (
@@ -86,7 +85,11 @@ const (
 
 var (
 	graceShutdownC chan struct{}
-	version        string
+	buildInfo      *cliutil.BuildInfo
+
+	routeFailMsg = fmt.Sprintf("failed to provision routing, please create it manually via Cloudflare dashboard or UI; "+
+		"most likely you already have a conflicting record there. You can also rerun this command with --%s to overwrite "+
+		"any existing DNS records for this hostname.", overwriteDNSFlag)
 )
 
 func Flags() []cli.Flag {
@@ -98,6 +101,7 @@ func Commands() []*cli.Command {
 		buildLoginSubcommand(false),
 		buildCreateCommand(),
 		buildRouteCommand(),
+		buildVirtualNetworkSubcommand(false),
 		buildRunCommand(),
 		buildListCommand(),
 		buildInfoCommand(),
@@ -122,14 +126,14 @@ func buildTunnelCommand(subcommands []*cli.Command) *cli.Command {
 		Name:      "tunnel",
 		Action:    cliutil.ConfiguredAction(TunnelCommand),
 		Category:  "Tunnel",
-		Usage:     "Make a locally-running web service accessible over the internet using Argo Tunnel.",
+		Usage:     "Make a locally-running web service accessible over the internet using Cloudflare Tunnel.",
 		ArgsUsage: " ",
-		Description: `Argo Tunnel asks you to specify a hostname on a Cloudflare-powered
+		Description: `Cloudflare Tunnel asks you to specify a hostname on a Cloudflare-powered
 		domain you control and a local address. Traffic from that hostname is routed
 		(optionally via a Cloudflare Load Balancer) to this machine and appears on the
 		specified port where it can be served.
 
-		This feature requires your Cloudflare account be subscribed to the Argo Smart Routing feature.
+		This feature requires your Cloudflare account be subscribed to the Cloudflare Smart Routing feature.
 
 		To use, begin by calling login to download a certificate:
 
@@ -159,19 +163,26 @@ func TunnelCommand(c *cli.Context) error {
 		return fmt.Errorf("Use `cloudflared tunnel run` to start tunnel %s", ref)
 	}
 
+	// Unauthenticated named tunnel on <random>.<quick-tunnels-service>.com
+	// For now, default to legacy setup unless quick-service is specified
+	if !dnsProxyStandAlone(c, nil) && c.String("hostname") == "" && c.String("quick-service") != "" {
+		return RunQuickTunnel(sc)
+	}
+
 	// Start a classic tunnel
 	return runClassicTunnel(sc)
 }
 
-func Init(ver string, gracefulShutdown chan struct{}) {
-	version, graceShutdownC = ver, gracefulShutdown
+func Init(info *cliutil.BuildInfo, gracefulShutdown chan struct{}) {
+	buildInfo, graceShutdownC = info, gracefulShutdown
 }
 
 // runAdhocNamedTunnel create, route and run a named tunnel in one command
 func runAdhocNamedTunnel(sc *subcommandContext, name, credentialsOutputPath string) error {
 	tunnel, ok, err := sc.tunnelActive(name)
 	if err != nil || !ok {
-		tunnel, err = sc.create(name, credentialsOutputPath)
+		// pass empty string as secret to generate one
+		tunnel, err = sc.create(name, credentialsOutputPath, "")
 		if err != nil {
 			return errors.Wrap(err, "failed to create tunnel")
 		}
@@ -181,7 +192,7 @@ func runAdhocNamedTunnel(sc *subcommandContext, name, credentialsOutputPath stri
 
 	if r, ok := routeFromFlag(sc.c); ok {
 		if res, err := sc.route(tunnel.ID, r); err != nil {
-			sc.log.Err(err).Msg("failed to create route, please create it manually")
+			sc.log.Err(err).Str("route", r.String()).Msg(routeFailMsg)
 		} else {
 			sc.log.Info().Msg(res.SuccessSummary())
 		}
@@ -196,22 +207,22 @@ func runAdhocNamedTunnel(sc *subcommandContext, name, credentialsOutputPath stri
 
 // runClassicTunnel creates a "classic" non-named tunnel
 func runClassicTunnel(sc *subcommandContext) error {
-	return StartServer(sc.c, version, nil, sc.log, sc.isUIEnabled)
+	return StartServer(sc.c, buildInfo, nil, sc.log, sc.isUIEnabled)
 }
 
-func routeFromFlag(c *cli.Context) (tunnelstore.Route, bool) {
+func routeFromFlag(c *cli.Context) (route cfapi.HostnameRoute, ok bool) {
 	if hostname := c.String("hostname"); hostname != "" {
 		if lbPool := c.String("lb-pool"); lbPool != "" {
-			return tunnelstore.NewLBRoute(hostname, lbPool), true
+			return cfapi.NewLBRoute(hostname, lbPool), true
 		}
-		return tunnelstore.NewDNSRoute(hostname), true
+		return cfapi.NewDNSRoute(hostname, c.Bool(overwriteDNSFlagName)), true
 	}
 	return nil, false
 }
 
 func StartServer(
 	c *cli.Context,
-	version string,
+	info *cliutil.BuildInfo,
 	namedTunnel *connection.NamedTunnelConfig,
 	log *zerolog.Logger,
 	isUIEnabled bool,
@@ -258,8 +269,7 @@ func StartServer(
 		defer trace.Stop()
 	}
 
-	buildInfo := buildinfo.GetBuildInfo(version)
-	buildInfo.Log(log)
+	info.Log(log)
 	logClientOptions(c, log)
 
 	// this context drives the server, when it's cancelled tunnel and all other components (origins, dns, etc...) should stop
@@ -296,7 +306,7 @@ func StartServer(
 	}()
 
 	// Serve DNS proxy stand-alone if no hostname or tag or app is going to run
-	if dnsProxyStandAlone(c) {
+	if dnsProxyStandAlone(c, namedTunnel) {
 		connectedSignal.Notify()
 		// no grace period, handle SIGINT/SIGTERM immediately
 		return waitToShutdown(&wg, cancel, errC, graceShutdownC, 0, log)
@@ -314,7 +324,16 @@ func StartServer(
 
 	observer := connection.NewObserver(log, logTransport, isUIEnabled)
 
-	tunnelConfig, ingressRules, err := prepareTunnelConfig(c, buildInfo, version, log, logTransport, observer, namedTunnel)
+	// Send Quick Tunnel URL to UI if applicable
+	var quickTunnelURL string
+	if namedTunnel != nil {
+		quickTunnelURL = namedTunnel.QuickTunnelUrl
+	}
+	if quickTunnelURL != "" {
+		observer.SendURL(quickTunnelURL)
+	}
+
+	tunnelConfig, ingressRules, err := prepareTunnelConfig(c, info, log, logTransport, observer, namedTunnel)
 	if err != nil {
 		log.Err(err).Msg("Couldn't start tunnel")
 		return err
@@ -331,7 +350,7 @@ func StartServer(
 		defer wg.Done()
 		readinessServer := metrics.NewReadyServer(log)
 		observer.RegisterSink(readinessServer)
-		errC <- metrics.ServeMetrics(metricsListener, ctx.Done(), readinessServer, log)
+		errC <- metrics.ServeMetrics(metricsListener, ctx.Done(), readinessServer, quickTunnelURL, log)
 	}()
 
 	if err := ingressRules.StartOrigins(&wg, log, ctx.Done(), errC); err != nil {
@@ -355,7 +374,7 @@ func StartServer(
 
 	if isUIEnabled {
 		tunnelUI := ui.NewUIModel(
-			version,
+			info.Version(),
 			hostname,
 			metricsListener.Addr().String(),
 			&ingressRules,
@@ -365,7 +384,11 @@ func StartServer(
 		observer.RegisterSink(app)
 	}
 
-	return waitToShutdown(&wg, cancel, errC, graceShutdownC, c.Duration("grace-period"), log)
+	gracePeriod, err := gracePeriod(c)
+	if err != nil {
+		return err
+	}
+	return waitToShutdown(&wg, cancel, errC, graceShutdownC, gracePeriod, log)
 }
 
 func waitToShutdown(wg *sync.WaitGroup,
@@ -465,7 +488,7 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 		credentialsFileFlag,
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:   "is-autoupdated",
-			Usage:  "Signal the new process that Argo Tunnel connector has been autoupdated",
+			Usage:  "Signal the new process that Cloudflare Tunnel connector has been autoupdated",
 			Value:  false,
 			Hidden: true,
 		}),
@@ -474,6 +497,11 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 			Usage:   "Address of the Cloudflare tunnel server. Only works in Cloudflare's internal testing environment.",
 			EnvVars: []string{"TUNNEL_EDGE"},
 			Hidden:  true,
+		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:    "region",
+			Usage:   "Cloudflare Edge region to connect to. Omit or set to empty to connect to the global region.",
+			EnvVars: []string{"TUNNEL_REGION"},
 		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:    tlsconfig.CaCertFlag,
@@ -595,7 +623,7 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:    "stdin-control",
 			Usage:   "Control the process using commands sent through stdin",
-			EnvVars: []string{"STDIN-CONTROL"},
+			EnvVars: []string{"STDIN_CONTROL"},
 			Hidden:  true,
 			Value:   false,
 		}),
@@ -612,7 +640,20 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 			Value:  false,
 			Hidden: shouldHide,
 		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:   "quick-service",
+			Usage:  "URL for a service which manages unauthenticated 'quick' tunnels.",
+			Value:  "https://api.trycloudflare.com",
+			Hidden: true,
+		}),
+		altsrc.NewIntFlag(&cli.IntFlag{
+			Name:    "max-fetch-size",
+			Usage:   `The maximum number of results that cloudflared can fetch from Cloudflare API for any listing operations needed`,
+			EnvVars: []string{"TUNNEL_MAX_FETCH_SIZE"},
+			Hidden:  true,
+		}),
 		selectProtocolFlag,
+		overwriteDNSFlag,
 	}...)
 
 	return flags
@@ -699,7 +740,7 @@ func configureProxyFlags(shouldHide bool) []cli.Flag {
 			Hidden: shouldHide,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
-			Name:   ingress.ProxyTCPKeepAlive,
+			Name:   ingress.ProxyTCPKeepAliveFlag,
 			Usage:  "HTTP proxy TCP keepalive duration",
 			Value:  time.Second * 30,
 			Hidden: shouldHide,

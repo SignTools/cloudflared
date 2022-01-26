@@ -1,10 +1,19 @@
-pinned_go: &pinned_go go=1.15.7-1
-pinned_go_fips: &pinned_go_fips go-fips=1.15.5-3
+pinned_go: &pinned_go go=1.17.5-1
+pinned_go_fips: &pinned_go_fips go-boring=1.17.5-1
 
 build_dir: &build_dir /cfsetup_build
 default-flavor: buster
 stretch: &stretch
   build:
+    build_dir: *build_dir
+    builddeps:
+      - *pinned_go
+      - build-essential
+    post-cache:
+      - export GOOS=linux
+      - export GOARCH=amd64
+      - make cloudflared
+  build-fips:
     build_dir: *build_dir
     builddeps:
       - *pinned_go_fips
@@ -14,9 +23,69 @@ stretch: &stretch
       - export GOARCH=amd64
       - export FIPS=true
       - make cloudflared
-  build-deb:
+  # except FIPS (handled in github-fips-release-pkgs) and macos (handled in github-release-macos-amd64)
+  github-release-pkgs:
     build_dir: *build_dir
     builddeps:
+      - *pinned_go
+      - build-essential
+      - fakeroot
+      - rubygem-fpm
+      - rpm
+      - wget
+      # libmsi and libgcab are libraries the wixl binary depends on.
+      - libmsi-dev
+      - libgcab-dev
+      - python3-dev
+      - libffi-dev
+      - python3-setuptools
+      - python3-pip
+    pre-cache: &github_release_pkgs_pre_cache
+      - wget https://github.com/sudarshan-reddy/msitools/releases/download/v0.101b/wixl -P /usr/local/bin
+      - chmod a+x /usr/local/bin/wixl
+      - pip3 install pynacl==1.4.0
+      - pip3 install pygithub==1.55
+    post-cache:
+      # build all packages (except macos and FIPS) and move them to /cfsetup/built_artifacts
+      - ./build-packages.sh
+      # release the packages built and moved to /cfsetup/built_artifacts
+      - make github-release-built-pkgs
+  # handle FIPS separately so that we built with gofips compiler
+  github-fips-release-pkgs:
+    build_dir: *build_dir
+    builddeps:
+      - *pinned_go_fips
+      - build-essential
+      - fakeroot
+      - rubygem-fpm
+      - rpm
+      - wget
+      # libmsi and libgcab are libraries the wixl binary depends on.
+      - libmsi-dev
+      - libgcab-dev
+      - python3-dev
+      - libffi-dev
+      - python3-setuptools
+      - python3-pip
+    pre-cache: *github_release_pkgs_pre_cache
+    post-cache:
+      # same logic as above, but for FIPS packages only
+      - ./build-packages-fips.sh
+      - make github-release-built-pkgs
+  build-deb:
+    build_dir: *build_dir
+    builddeps: &build_deb_deps
+      - *pinned_go
+      - build-essential
+      - fakeroot
+      - rubygem-fpm
+    post-cache:
+      - export GOOS=linux
+      - export GOARCH=amd64
+      - make cloudflared-deb
+  build-fips-internal-deb:
+    build_dir: *build_dir
+    builddeps: &build_fips_deb_deps
       - *pinned_go_fips
       - build-essential
       - fakeroot
@@ -25,14 +94,21 @@ stretch: &stretch
       - export GOOS=linux
       - export GOARCH=amd64
       - export FIPS=true
+      - export ORIGINAL_NAME=true
+      - make cloudflared-deb
+  build-fips-internal-deb-nightly:
+    build_dir: *build_dir
+    builddeps: *build_fips_deb_deps
+    post-cache:
+      - export GOOS=linux
+      - export GOARCH=amd64
+      - export NIGHTLY=true
+      - export FIPS=true
+      - export ORIGINAL_NAME=true
       - make cloudflared-deb
   build-deb-arm64:
     build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - build-essential
-      - fakeroot
-      - rubygem-fpm
+    builddeps: *build_deb_deps
     post-cache:
       - export GOOS=linux
       - export GOARCH=arm64
@@ -40,7 +116,7 @@ stretch: &stretch
   publish-deb:
     build_dir: *build_dir
     builddeps:
-      - *pinned_go_fips
+      - *pinned_go
       - build-essential
       - fakeroot
       - rubygem-fpm
@@ -48,156 +124,43 @@ stretch: &stretch
     post-cache:
       - export GOOS=linux
       - export GOARCH=amd64
-      - export FIPS=true
       - make publish-deb
-  release-linux-amd64:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go_fips
-      - build-essential
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=amd64
-      - export FIPS=true
-      - make release
-  github-release-linux-amd64:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go_fips
-      - build-essential
-      - python3-setuptools
-      - python3-pip
-    pre-cache: &install_pygithub
-      - pip3 install pygithub
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=amd64
-      - export FIPS=true
-      - make github-release
-  release-linux-armv6:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - crossbuild-essential-armhf
-      - gcc-arm-linux-gnueabihf
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=arm
-      - export CC=arm-linux-gnueabihf-gcc
-      - make release
-  github-release-linux-armv6:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - crossbuild-essential-armhf
-      - gcc-arm-linux-gnueabihf
-      - python3-setuptools
-      - python3-pip
-    pre-cache: *install_pygithub
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=arm
-      - export CC=arm-linux-gnueabihf-gcc
-      - make github-release
-  release-linux-386:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-multilib
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=386
-      - make release
-  github-release-linux-386:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-multilib
-      - python3-setuptools
-      - python3-pip
-    pre-cache: *install_pygithub
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=386
-      - make github-release
-  release-windows-amd64:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-mingw-w64
-    post-cache:
-      - export GOOS=windows
-      - export GOARCH=amd64
-      - export CC=x86_64-w64-mingw32-gcc
-      - make release
-  github-release-windows-amd64:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-mingw-w64
-      - python3-setuptools
-      - python3-pip
-    pre-cache: *install_pygithub
-    post-cache:
-      - export GOOS=windows
-      - export GOARCH=amd64
-      - export CC=x86_64-w64-mingw32-gcc
-      - make github-release
-  release-windows-386:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-mingw-w64
-    post-cache:
-      - export GOOS=windows
-      - export GOARCH=386
-      - export CC=i686-w64-mingw32-gcc-win32
-      - make release
-  github-release-windows-386:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - gcc-mingw-w64
-      - python3-setuptools
-      - python3-pip
-    pre-cache: *install_pygithub
-    post-cache:
-      - export GOOS=windows
-      - export GOARCH=386
-      - export CC=i686-w64-mingw32-gcc-win32
-      - make github-release
-  github-release-linux-arm64:
-    build_dir: *build_dir
-    builddeps:
-      - *pinned_go
-      - crossbuild-essential-armhf
-      - g++-aarch64-linux-gnu
-      - python3-setuptools
-      - python3-pip
-    pre-cache: *install_pygithub
-    post-cache:
-      - export GOOS=linux
-      - export GOARCH=arm64
-      - export CC=aarch64-linux-gnu-gcc
-      - make github-release
   github-release-macos-amd64:
     build_dir: *build_dir
     builddeps:
       - *pinned_go
+      - build-essential
+      - python3-dev
+      - libffi-dev
       - python3-setuptools
       - python3-pip
-    pre-cache: *install_pygithub
+    pre-cache: &install_pygithub
+      - pip3 install pynacl==1.4.0
+      - pip3 install pygithub==1.55
     post-cache:
       - make github-mac-upload
   test:
     build_dir: *build_dir
     builddeps:
+      - *pinned_go
+      - build-essential
+      - gotest-to-teamcity
+    pre-cache: &test_pre_cache
+      - go get golang.org/x/tools/cmd/goimports
+      - go get github.com/sudarshan-reddy/go-sumtype@v0.0.0-20210827105221-82eca7e5abb1
+    post-cache:
+      - export GOOS=linux
+      - export GOARCH=amd64
+      - export PATH="$HOME/go/bin:$PATH"
+      - ./fmt-check.sh
+      - make test | gotest-to-teamcity
+  test-fips:
+    build_dir: *build_dir
+    builddeps:
       - *pinned_go_fips
       - build-essential
       - gotest-to-teamcity
-    pre-cache:
-      - go get golang.org/x/tools/cmd/goimports
-      - go get github.com/BurntSushi/go-sumtype
+    pre-cache: *test_pre_cache
     post-cache:
       - export GOOS=linux
       - export GOARCH=amd64
@@ -222,7 +185,7 @@ stretch: &stretch
     post-cache:
       # Creates and routes a Named Tunnel for this build. Also constructs config file from env vars.
       - python3 component-tests/setup.py --type create
-      - pytest component-tests
+      - pytest component-tests -o log_cli=true --log-cli-level=INFO
       # The Named Tunnel is deleted and its route unprovisioned here.
       - python3 component-tests/setup.py --type cleanup
   update-homebrew:
@@ -235,6 +198,9 @@ stretch: &stretch
     build_dir: *build_dir
     builddeps:
       - *pinned_go
+      - build-essential
+      - python3-dev
+      - libffi-dev
       - python3-setuptools
       - python3-pip
     pre-cache: *install_pygithub
@@ -279,22 +245,11 @@ centos-7:
       - https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
     pre-cache:
       - yum install -y fakeroot
-      - wget https://golang.org/dl/go1.15.7.linux-amd64.tar.gz -P /tmp/
-      - tar -C /usr/local -xzf /tmp/go1.15.7.linux-amd64.tar.gz
+      - yum upgrade -y binutils-2.27-44.base.el7.x86_64
+      - wget https://go.dev/dl/go1.17.5.linux-amd64.tar.gz -P /tmp/
+      - tar -C /usr/local -xzf /tmp/go1.17.5.linux-amd64.tar.gz
     post-cache:
       - export PATH=$PATH:/usr/local/go/bin
       - export GOOS=linux
       - export GOARCH=amd64
       - make publish-rpm
-  build-rpm:
-    build_dir: *build_dir
-    builddeps: *el7_builddeps
-    pre-cache:
-      - yum install -y fakeroot
-      - wget https://golang.org/dl/go1.15.7.linux-amd64.tar.gz -P /tmp/
-      - tar -C /usr/local -xzf /tmp/go1.15.7.linux-amd64.tar.gz
-    post-cache:
-      - export PATH=$PATH:/usr/local/go/bin
-      - export GOOS=linux
-      - export GOARCH=amd64
-      - make cloudflared-rpm

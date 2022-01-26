@@ -25,6 +25,7 @@ const (
 	keyName               = "token"
 	tokenCookie           = "CF_Authorization"
 	appDomainHeader       = "CF-Access-Domain"
+	appAUDHeader          = "CF-Access-Aud"
 	AccessLoginWorkerPath = "/cdn-cgi/access/login"
 )
 
@@ -45,7 +46,7 @@ type signalHandler struct {
 	signals    []os.Signal
 }
 
-type appJWTPayload struct {
+type jwtPayload struct {
 	Aud   []string `json:"aud"`
 	Email string   `json:"email"`
 	Exp   int      `json:"exp"`
@@ -56,17 +57,12 @@ type appJWTPayload struct {
 	Subt  string   `json:"sub"`
 }
 
-type orgJWTPayload struct {
-	appJWTPayload
-	Aud string `json:"aud"`
-}
-
 type transferServiceResponse struct {
 	AppToken string `json:"app_token"`
 	OrgToken string `json:"org_token"`
 }
 
-func (p appJWTPayload) isExpired() bool {
+func (p jwtPayload) isExpired() bool {
 	return int(time.Now().Unix()) > p.Exp
 }
 
@@ -182,7 +178,7 @@ func getToken(appURL *url.URL, appInfo *AppInfo, useHostOnly bool, log *zerolog.
 		return token, nil
 	}
 
-	// If an app token couldnt be found on disk, check for an org token and attempt to exchange it for an app token.
+	// If an app token couldn't be found on disk, check for an org token and attempt to exchange it for an app token.
 	var orgTokenPath string
 	orgToken, err := GetOrgTokenIfExists(appInfo.AuthDomain)
 	if err != nil {
@@ -217,7 +213,7 @@ func getToken(appURL *url.URL, appInfo *AppInfo, useHostOnly bool, log *zerolog.
 // getTokensFromEdge will attempt to use the transfer service to retrieve an app and org token, save them to disk,
 // and return the app token.
 func getTokensFromEdge(appURL *url.URL, appTokenPath, orgTokenPath string, useHostOnly bool, log *zerolog.Logger) (string, error) {
-	// If no org token exists or if it couldnt be exchanged for an app token, then run the transfer service flow.
+	// If no org token exists or if it couldn't be exchanged for an app token, then run the transfer service flow.
 
 	// this weird parameter is the resource name (token) and the key/value
 	// we want to send to the transfer service. the key is token and the value
@@ -270,14 +266,19 @@ func GetAppInfo(reqURL *url.URL) (*AppInfo, error) {
 		return nil, errors.Wrap(err, "failed to get app info")
 	}
 	resp.Body.Close()
-	location := resp.Request.URL
-	if !strings.Contains(location.Path, AccessLoginWorkerPath) {
-		return nil, fmt.Errorf("failed to get Access app info for %s", reqURL.String())
-	}
 
-	aud := resp.Request.URL.Query().Get("kid")
-	if aud == "" {
-		return nil, errors.New("Empty app aud")
+	var aud string
+	location := resp.Request.URL
+	if strings.Contains(location.Path, AccessLoginWorkerPath) {
+		aud = resp.Request.URL.Query().Get("kid")
+		if aud == "" {
+			return nil, errors.New("Empty app aud")
+		}
+	} else if audHeader := resp.Header.Get(appAUDHeader); audHeader != "" {
+		// 403/401 from the edge will have aud in a header
+		aud = audHeader
+	} else {
+		return nil, fmt.Errorf("failed to find Access application at %s", reqURL.String())
 	}
 
 	domain := resp.Header.Get(appDomainHeader)
@@ -286,7 +287,6 @@ func GetAppInfo(reqURL *url.URL) (*AppInfo, error) {
 	}
 
 	return &AppInfo{location.Hostname(), aud, domain}, nil
-
 }
 
 // exchangeOrgToken attaches an org token to a request to the appURL and returns an app token. This uses the Access SSO
@@ -341,7 +341,7 @@ func GetOrgTokenIfExists(authDomain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var payload orgJWTPayload
+	var payload jwtPayload
 	err = json.Unmarshal(token.Payload, &payload)
 	if err != nil {
 		return "", err
@@ -363,7 +363,7 @@ func GetAppTokenIfExists(appInfo *AppInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var payload appJWTPayload
+	var payload jwtPayload
 	err = json.Unmarshal(token.Payload, &payload)
 	if err != nil {
 		return "", err

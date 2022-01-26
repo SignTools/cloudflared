@@ -11,13 +11,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cloudflare/cloudflared/connection"
 	"github.com/cloudflare/cloudflared/edgediscovery"
+	"github.com/cloudflare/cloudflared/edgediscovery/allregions"
 	"github.com/cloudflare/cloudflared/h2mux"
+	quicpogs "github.com/cloudflare/cloudflared/quic"
 	"github.com/cloudflare/cloudflared/retry"
 	"github.com/cloudflare/cloudflared/signal"
 	"github.com/cloudflare/cloudflared/tunnelrpc"
@@ -26,16 +29,10 @@ import (
 
 const (
 	dialTimeout              = 15 * time.Second
-	lbProbeUserAgentPrefix   = "Mozilla/5.0 (compatible; Cloudflare-Traffic-Manager/1.0; +https://www.cloudflare.com/traffic-manager/;"
 	FeatureSerializedHeaders = "serialized_headers"
 	FeatureQuickReconnects   = "quick_reconnects"
-)
-
-type rpcName string
-
-const (
-	reconnect    rpcName = "reconnect"
-	authenticate rpcName = " authenticate"
+	quicHandshakeIdleTimeout = 5 * time.Second
+	quicMaxIdleTimeout       = 15 * time.Second
 )
 
 type TunnelConfig struct {
@@ -44,10 +41,10 @@ type TunnelConfig struct {
 	ClientID         string
 	CloseConnOnce    *sync.Once // Used to close connectedSignal no more than once
 	EdgeAddrs        []string
+	Region           string
 	HAConnections    int
 	IncidentLookup   IncidentLookup
 	IsAutoupdated    bool
-	IsFreeTunnel     bool
 	LBPool           string
 	Tags             []tunnelpogs.Tag
 	Log              *zerolog.Logger
@@ -126,7 +123,8 @@ func ServeTunnelLoop(
 	ctx context.Context,
 	credentialManager *reconnectCredentialManager,
 	config *TunnelConfig,
-	addr *net.TCPAddr,
+	addr *allregions.EdgeAddr,
+	connAwareLogger *ConnAwareLogger,
 	connIndex uint8,
 	connectedSignal *signal.Signal,
 	cloudflaredUUID uuid.UUID,
@@ -136,7 +134,8 @@ func ServeTunnelLoop(
 	haConnections.Inc()
 	defer haConnections.Dec()
 
-	connLog := config.Log.With().Uint8(connection.LogFieldConnIndex, connIndex).Logger()
+	logger := config.Log.With().Uint8(connection.LogFieldConnIndex, connIndex).Logger()
+	connLog := connAwareLogger.ReplaceLogger(&logger)
 
 	protocolFallback := &protocolFallback{
 		retry.BackoffHandler{MaxRetries: config.Retries},
@@ -156,7 +155,7 @@ func ServeTunnelLoop(
 	for {
 		err, recoverable := ServeTunnel(
 			ctx,
-			&connLog,
+			connLog,
 			credentialManager,
 			config,
 			addr,
@@ -178,7 +177,7 @@ func ServeTunnelLoop(
 		if !ok {
 			return err
 		}
-		connLog.Info().Msgf("Retrying connection in up to %s seconds", duration)
+		connLog.Logger().Info().Msgf("Retrying connection in up to %s seconds", duration)
 
 		select {
 		case <-ctx.Done():
@@ -186,7 +185,13 @@ func ServeTunnelLoop(
 		case <-gracefulShutdownC:
 			return nil
 		case <-protocolFallback.BackoffTimer():
-			if !selectNextProtocol(&connLog, protocolFallback, config.ProtocolSelector) {
+			var idleTimeoutError *quic.IdleTimeoutError
+			if !selectNextProtocol(
+				connLog.Logger(),
+				protocolFallback,
+				config.ProtocolSelector,
+				errors.As(err, &idleTimeoutError),
+			) {
 				return err
 			}
 		}
@@ -218,8 +223,9 @@ func selectNextProtocol(
 	connLog *zerolog.Logger,
 	protocolBackoff *protocolFallback,
 	selector connection.ProtocolSelector,
+	isNetworkActivityTimeout bool,
 ) bool {
-	if protocolBackoff.ReachedMaxRetries() {
+	if protocolBackoff.ReachedMaxRetries() || isNetworkActivityTimeout {
 		fallback, hasFallback := selector.Fallback()
 		if !hasFallback {
 			return false
@@ -244,10 +250,10 @@ func selectNextProtocol(
 // on error returns a flag indicating if error can be retried
 func ServeTunnel(
 	ctx context.Context,
-	connLog *zerolog.Logger,
+	connLog *ConnAwareLogger,
 	credentialManager *reconnectCredentialManager,
 	config *TunnelConfig,
-	addr *net.TCPAddr,
+	addr *allregions.EdgeAddr,
 	connIndex uint8,
 	fuse *h2mux.BooleanFuse,
 	backoff *protocolFallback,
@@ -270,32 +276,126 @@ func ServeTunnel(
 	}()
 
 	defer config.Observer.SendDisconnect(connIndex)
+	err, recoverable = serveTunnel(
+		ctx,
+		connLog,
+		credentialManager,
+		config,
+		addr,
+		connIndex,
+		fuse,
+		backoff,
+		cloudflaredUUID,
+		reconnectCh,
+		protocol,
+		gracefulShutdownC,
+	)
 
-	edgeConn, err := edgediscovery.DialEdge(ctx, dialTimeout, config.EdgeTLSConfigs[protocol], addr)
 	if err != nil {
-		connLog.Err(err).Msg("Unable to establish connection with Cloudflare edge")
-		return err, true
+		switch err := err.(type) {
+		case connection.DupConnRegisterTunnelError:
+			connLog.ConnAwareLogger().Err(err).Msg("Unable to establish connection.")
+			// don't retry this connection anymore, let supervisor pick a new address
+			return err, false
+		case connection.ServerRegisterTunnelError:
+			connLog.ConnAwareLogger().Err(err).Msg("Register tunnel error from server side")
+			// Don't send registration error return from server to Sentry. They are
+			// logged on server side
+			if incidents := config.IncidentLookup.ActiveIncidents(); len(incidents) > 0 {
+				connLog.ConnAwareLogger().Msg(activeIncidentsMsg(incidents))
+			}
+			return err.Cause, !err.Permanent
+		case ReconnectSignal:
+			connLog.Logger().Info().
+				Uint8(connection.LogFieldConnIndex, connIndex).
+				Msgf("Restarting connection due to reconnect signal in %s", err.Delay)
+			err.DelayBeforeReconnect()
+			return err, true
+		default:
+			if err == context.Canceled {
+				connLog.Logger().Debug().Err(err).Msgf("Serve tunnel error")
+				return err, false
+			}
+			connLog.ConnAwareLogger().Err(err).Msgf("Serve tunnel error")
+			_, permanent := err.(unrecoverableError)
+			return err, !permanent
+		}
 	}
+	return nil, false
+}
+
+func serveTunnel(
+	ctx context.Context,
+	connLog *ConnAwareLogger,
+	credentialManager *reconnectCredentialManager,
+	config *TunnelConfig,
+	addr *allregions.EdgeAddr,
+	connIndex uint8,
+	fuse *h2mux.BooleanFuse,
+	backoff *protocolFallback,
+	cloudflaredUUID uuid.UUID,
+	reconnectCh chan ReconnectSignal,
+	protocol connection.Protocol,
+	gracefulShutdownC <-chan struct{},
+) (err error, recoverable bool) {
+
 	connectedFuse := &connectedFuse{
 		fuse:    fuse,
 		backoff: backoff,
 	}
+	controlStream := connection.NewControlStream(
+		config.Observer,
+		connectedFuse,
+		config.NamedTunnel,
+		connIndex,
+		nil,
+		gracefulShutdownC,
+		config.ConnectionConfig.GracePeriod,
+	)
 
-	if protocol == connection.HTTP2 {
+	switch protocol {
+	case connection.QUIC, connection.QUICWarp:
+		connOptions := config.ConnectionOptions(addr.UDP.String(), uint8(backoff.Retries()))
+		return ServeQUIC(ctx,
+			addr.UDP,
+			config,
+			connLog,
+			connOptions,
+			controlStream,
+			connIndex,
+			reconnectCh,
+			gracefulShutdownC)
+
+	case connection.HTTP2, connection.HTTP2Warp:
+		edgeConn, err := edgediscovery.DialEdge(ctx, dialTimeout, config.EdgeTLSConfigs[protocol], addr.TCP)
+		if err != nil {
+			connLog.ConnAwareLogger().Err(err).Msg("Unable to establish connection with Cloudflare edge")
+			return err, true
+		}
+
 		connOptions := config.ConnectionOptions(edgeConn.LocalAddr().String(), uint8(backoff.Retries()))
-		err = ServeHTTP2(
+		if err := ServeHTTP2(
 			ctx,
 			connLog,
 			config,
 			edgeConn,
 			connOptions,
+			controlStream,
 			connIndex,
-			connectedFuse,
-			reconnectCh,
 			gracefulShutdownC,
-		)
-	} else {
-		err = ServeH2mux(
+			reconnectCh,
+		); err != nil {
+			return err, false
+		}
+
+	default:
+		edgeConn, err := edgediscovery.DialEdge(ctx, dialTimeout, config.EdgeTLSConfigs[protocol], addr.TCP)
+		if err != nil {
+			connLog.ConnAwareLogger().Err(err).Msg("Unable to establish connection with Cloudflare edge")
+			return err, true
+		}
+
+		if err := ServeH2mux(
 			ctx,
 			connLog,
 			credentialManager,
@@ -306,40 +406,11 @@ func ServeTunnel(
 			cloudflaredUUID,
 			reconnectCh,
 			gracefulShutdownC,
-		)
-	}
-
-	if err != nil {
-		switch err := err.(type) {
-		case connection.DupConnRegisterTunnelError:
-			connLog.Err(err).Msg("Unable to establish connection.")
-			// don't retry this connection anymore, let supervisor pick a new address
+		); err != nil {
 			return err, false
-		case connection.ServerRegisterTunnelError:
-			connLog.Err(err).Msg("Register tunnel error from server side")
-			// Don't send registration error return from server to Sentry. They are
-			// logged on server side
-			if incidents := config.IncidentLookup.ActiveIncidents(); len(incidents) > 0 {
-				connLog.Error().Msg(activeIncidentsMsg(incidents))
-			}
-			return err.Cause, !err.Permanent
-		case ReconnectSignal:
-			connLog.Info().
-				Uint8(connection.LogFieldConnIndex, connIndex).
-				Msgf("Restarting connection due to reconnect signal in %s", err.Delay)
-			err.DelayBeforeReconnect()
-			return err, true
-		default:
-			if err == context.Canceled {
-				connLog.Debug().Err(err).Msgf("Serve tunnel error")
-				return err, false
-			}
-			connLog.Err(err).Msgf("Serve tunnel error")
-			_, permanent := err.(unrecoverableError)
-			return err, !permanent
 		}
 	}
-	return nil, false
+	return
 }
 
 type unrecoverableError struct {
@@ -352,7 +423,7 @@ func (r unrecoverableError) Error() string {
 
 func ServeH2mux(
 	ctx context.Context,
-	connLog *zerolog.Logger,
+	connLog *ConnAwareLogger,
 	credentialManager *reconnectCredentialManager,
 	config *TunnelConfig,
 	edgeConn net.Conn,
@@ -362,7 +433,7 @@ func ServeH2mux(
 	reconnectCh chan ReconnectSignal,
 	gracefulShutdownC <-chan struct{},
 ) error {
-	connLog.Debug().Msgf("Connecting via h2mux")
+	connLog.Logger().Debug().Msgf("Connecting via h2mux")
 	// Returns error from parsing the origin URL or handshake errors
 	handler, err, recoverable := connection.NewH2muxConnection(
 		config.ConnectionConfig,
@@ -399,25 +470,24 @@ func ServeH2mux(
 
 func ServeHTTP2(
 	ctx context.Context,
-	connLog *zerolog.Logger,
+	connLog *ConnAwareLogger,
 	config *TunnelConfig,
 	tlsServerConn net.Conn,
 	connOptions *tunnelpogs.ConnectionOptions,
+	controlStreamHandler connection.ControlStreamHandler,
 	connIndex uint8,
-	connectedFuse connection.ConnectedFuse,
-	reconnectCh chan ReconnectSignal,
 	gracefulShutdownC <-chan struct{},
+	reconnectCh chan ReconnectSignal,
 ) error {
-	connLog.Debug().Msgf("Connecting via http2")
+	connLog.Logger().Debug().Msgf("Connecting via http2")
 	h2conn := connection.NewHTTP2Connection(
 		tlsServerConn,
 		config.ConnectionConfig,
-		config.NamedTunnel,
 		connOptions,
 		config.Observer,
 		connIndex,
-		connectedFuse,
-		gracefulShutdownC,
+		controlStreamHandler,
+		config.Log,
 	)
 
 	errGroup, serveCtx := errgroup.WithContext(ctx)
@@ -435,6 +505,63 @@ func ServeHTTP2(
 	})
 
 	return errGroup.Wait()
+}
+
+func ServeQUIC(
+	ctx context.Context,
+	edgeAddr *net.UDPAddr,
+	config *TunnelConfig,
+	connLogger *ConnAwareLogger,
+	connOptions *tunnelpogs.ConnectionOptions,
+	controlStreamHandler connection.ControlStreamHandler,
+	connIndex uint8,
+	reconnectCh chan ReconnectSignal,
+	gracefulShutdownC <-chan struct{},
+) (err error, recoverable bool) {
+	tlsConfig := config.EdgeTLSConfigs[connection.QUIC]
+	quicConfig := &quic.Config{
+		HandshakeIdleTimeout:  quicHandshakeIdleTimeout,
+		MaxIdleTimeout:        quicMaxIdleTimeout,
+		MaxIncomingStreams:    connection.MaxConcurrentStreams,
+		MaxIncomingUniStreams: connection.MaxConcurrentStreams,
+		KeepAlive:             true,
+		EnableDatagrams:       true,
+		MaxDatagramFrameSize:  quicpogs.MaxDatagramFrameSize,
+		Tracer:                quicpogs.NewClientTracer(connLogger.Logger(), connIndex),
+	}
+
+	quicConn, err := connection.NewQUICConnection(
+		quicConfig,
+		edgeAddr,
+		tlsConfig,
+		config.ConnectionConfig.OriginProxy,
+		connOptions,
+		controlStreamHandler,
+		connLogger.Logger())
+	if err != nil {
+		connLogger.ConnAwareLogger().Err(err).Msgf("Failed to create new quic connection")
+		return err, true
+	}
+
+	errGroup, serveCtx := errgroup.WithContext(ctx)
+	errGroup.Go(func() error {
+		err := quicConn.Serve(serveCtx)
+		if err != nil {
+			connLogger.ConnAwareLogger().Err(err).Msg("Failed to serve quic connection")
+		}
+		return err
+	})
+
+	errGroup.Go(func() error {
+		err := listenReconnect(serveCtx, reconnectCh, gracefulShutdownC)
+		if err != nil {
+			// forcefully break the connection (this is only used for testing)
+			quicConn.Close()
+		}
+		return err
+	})
+
+	return errGroup.Wait(), false
 }
 
 func listenReconnect(ctx context.Context, reconnectCh <-chan ReconnectSignal, gracefulShutdownCh <-chan struct{}) error {

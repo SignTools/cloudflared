@@ -1,3 +1,6 @@
+//go:build !windows
+// +build !windows
+
 package updater
 
 import (
@@ -13,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +24,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+var testFilePath = filepath.Join(os.TempDir(), "test")
 
 func respondWithJSON(w http.ResponseWriter, v interface{}, status int) {
 	data, _ := json.Marshal(v)
@@ -208,7 +214,6 @@ func TestUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 	log.Println("server url: ", ts.URL)
@@ -229,7 +234,6 @@ func TestBetaUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 
@@ -249,7 +253,6 @@ func TestFailUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 
@@ -263,7 +266,6 @@ func TestNoUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 
@@ -278,7 +280,6 @@ func TestForcedUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 
@@ -298,7 +299,6 @@ func TestUpdateSpecificVersionService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 	reqVersion := "2020.9.1"
@@ -319,7 +319,6 @@ func TestCompressedUpdateService(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 
@@ -339,7 +338,6 @@ func TestUpdateWhenRunningKnownBuggyVersion(t *testing.T) {
 	ts := createServer()
 	defer ts.Close()
 
-	testFilePath := "tmpfile"
 	createTestFile(t, testFilePath)
 	defer os.Remove(testFilePath)
 

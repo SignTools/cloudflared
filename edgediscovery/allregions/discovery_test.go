@@ -1,11 +1,16 @@
 package allregions
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
+
+func (ea *EdgeAddr) String() string {
+	return fmt.Sprintf("%s-%s", ea.TCP, ea.UDP)
+}
 
 func TestEdgeDiscovery(t *testing.T) {
 	mockAddrs := newMockAddrs(19, 2, 5)
@@ -20,7 +25,7 @@ func TestEdgeDiscovery(t *testing.T) {
 	}
 
 	l := zerolog.Nop()
-	addrLists, err := edgeDiscovery(&l)
+	addrLists, err := edgeDiscovery(&l, "")
 	assert.NoError(t, err)
 	actualAddrSet := map[string]bool{}
 	for _, addrs := range addrLists {

@@ -3,8 +3,8 @@ package ingress
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -97,7 +97,7 @@ func TestDefaultStreamWSOverTCPConnection(t *testing.T) {
 }
 
 // TestSocksStreamWSOverTCPConnection simulates proxying in socks mode.
-// Eyeball side runs cloudflared accesss tcp with --url flag to start a websocket forwarder which
+// Eyeball side runs cloudflared access tcp with --url flag to start a websocket forwarder which
 // wraps SOCKS5 traffic in websocket
 // Origin side runs a tcpOverWSConnection with socks.StreamHandler
 func TestSocksStreamWSOverTCPConnection(t *testing.T) {
@@ -190,37 +190,53 @@ func TestSocksStreamWSOverTCPConnection(t *testing.T) {
 	}
 }
 
-func TestStreamWSConnection(t *testing.T) {
-	eyeballConn, edgeConn := net.Pipe()
+func TestWsConnReturnsBeforeStreamReturns(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		eyeballConn := &readWriter{
+			w: w,
+			r: r.Body,
+		}
 
-	origin := echoWSOrigin(t)
-	defer origin.Close()
+		cfdConn, originConn := net.Pipe()
+		tcpOverWSConn := tcpOverWSConnection{
+			conn:          cfdConn,
+			streamHandler: DefaultStreamHandler,
+		}
+		go func() {
+			time.Sleep(time.Millisecond * 10)
+			// Simulate losing connection to origin
+			originConn.Close()
+		}()
+		ctx := context.WithValue(r.Context(), websocket.PingPeriodContextKey, time.Microsecond)
+		tcpOverWSConn.Stream(ctx, eyeballConn, testLogger)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client := server.Client()
 
-	req, err := http.NewRequest(http.MethodGet, origin.URL, nil)
-	require.NoError(t, err)
-	req.Header.Set("Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
-
-	clientTLSConfig := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-	wsConn, resp, err := newWSConnection(clientTLSConfig, req)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-	require.Equal(t, "Upgrade", resp.Header.Get("Connection"))
-	require.Equal(t, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", resp.Header.Get("Sec-Websocket-Accept"))
-	require.Equal(t, "websocket", resp.Header.Get("Upgrade"))
-
-	ctx, cancel := context.WithTimeout(context.Background(), testStreamTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.Go(func() error {
-		echoWSEyeball(t, eyeballConn)
-		return nil
-	})
+	for i := 0; i < 50; i++ {
+		eyeballConn, edgeConn := net.Pipe()
+		req, err := http.NewRequestWithContext(ctx, http.MethodConnect, server.URL, edgeConn)
+		assert.NoError(t, err)
 
-	wsConn.Stream(ctx, edgeConn, testLogger)
-	require.NoError(t, errGroup.Wait())
+		resp, err := client.Transport.RoundTrip(req)
+		assert.NoError(t, err)
+		assert.Equal(t, resp.StatusCode, http.StatusOK)
+
+		errGroup.Go(func() error {
+			for {
+				if err := wsutil.WriteClientBinary(eyeballConn, testMessage); err != nil {
+					return nil
+				}
+			}
+		})
+	}
+
+	assert.NoError(t, errGroup.Wait())
 }
 
 type wsEyeball struct {
@@ -241,17 +257,23 @@ func (wse *wsEyeball) Write(p []byte) (int, error) {
 }
 
 func echoWSEyeball(t *testing.T, conn net.Conn) {
-	require.NoError(t, wsutil.WriteClientBinary(conn, testMessage))
+	defer func() {
+		assert.NoError(t, conn.Close())
+	}()
+
+	if !assert.NoError(t, wsutil.WriteClientBinary(conn, testMessage)) {
+		return
+	}
 
 	readMsg, err := wsutil.ReadServerBinary(conn)
-	require.NoError(t, err)
+	if !assert.NoError(t, err) {
+		return
+	}
 
-	require.Equal(t, testResponse, readMsg)
-
-	require.NoError(t, conn.Close())
+	assert.Equal(t, testResponse, readMsg)
 }
 
-func echoWSOrigin(t *testing.T) *httptest.Server {
+func echoWSOrigin(t *testing.T, expectMessages bool) *httptest.Server {
 	var upgrader = gorillaWS.Upgrader{
 		ReadBufferSize:  10,
 		WriteBufferSize: 10,
@@ -268,12 +290,17 @@ func echoWSOrigin(t *testing.T) *httptest.Server {
 		require.NoError(t, err)
 		defer conn.Close()
 
+		sawMessage := false
 		for {
 			messageType, p, err := conn.ReadMessage()
 			if err != nil {
+				if expectMessages && !sawMessage {
+					t.Errorf("unexpected error: %v", err)
+				}
 				return
 			}
-			require.Equal(t, testMessage, p)
+			assert.Equal(t, testMessage, p)
+			sawMessage = true
 			if err := conn.WriteMessage(messageType, testResponse); err != nil {
 				return
 			}
@@ -293,4 +320,17 @@ func echoTCPOrigin(t *testing.T, conn net.Conn) {
 
 	_, err = conn.Write(testResponse)
 	assert.NoError(t, err)
+}
+
+type readWriter struct {
+	w io.Writer
+	r io.Reader
+}
+
+func (r *readWriter) Read(p []byte) (n int, err error) {
+	return r.r.Read(p)
+}
+
+func (r *readWriter) Write(p []byte) (n int, err error) {
+	return r.w.Write(p)
 }

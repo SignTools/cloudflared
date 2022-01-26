@@ -143,11 +143,13 @@ func Commands() []*cli.Command {
 							Name:    sshTokenIDFlag,
 							Aliases: []string{"id"},
 							Usage:   "specify an Access service token ID you wish to use.",
+							EnvVars: []string{"TUNNEL_SERVICE_TOKEN_ID"},
 						},
 						&cli.StringFlag{
 							Name:    sshTokenSecretFlag,
 							Aliases: []string{"secret"},
 							Usage:   "specify an Access service token secret you wish to use.",
+							EnvVars: []string{"TUNNEL_SERVICE_TOKEN_SECRET"},
 						},
 						&cli.StringFlag{
 							Name:    logger.LogSSHDirectoryFlag,
@@ -238,7 +240,7 @@ func login(c *cli.Context) error {
 	return nil
 }
 
-// ensureURLScheme prepends a URL with https:// if it doesnt have a scheme. http:// URLs will not be converted.
+// ensureURLScheme prepends a URL with https:// if it doesn't have a scheme. http:// URLs will not be converted.
 func ensureURLScheme(url string) string {
 	url = strings.Replace(strings.ToLower(url), "http://", "https://", 1)
 	if !strings.HasPrefix(url, "https://") {

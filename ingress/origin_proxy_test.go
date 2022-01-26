@@ -2,8 +2,8 @@ package ingress
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,71 +18,6 @@ import (
 	"github.com/cloudflare/cloudflared/websocket"
 )
 
-// TestEstablishConnectionResponse ensures each implementation of StreamBasedOriginProxy returns
-// the expected response
-func assertEstablishConnectionResponse(t *testing.T,
-	originProxy StreamBasedOriginProxy,
-	req *http.Request,
-	expectHeader http.Header,
-) {
-	_, resp, err := originProxy.EstablishConnection(req)
-	assert.NoError(t, err)
-	assert.Equal(t, switchingProtocolText, resp.Status)
-	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-	assert.Equal(t, expectHeader, resp.Header)
-}
-
-func TestHTTPServiceEstablishConnection(t *testing.T) {
-	origin := echoWSOrigin(t)
-	defer origin.Close()
-	originURL, err := url.Parse(origin.URL)
-	require.NoError(t, err)
-
-	httpService := &httpService{
-		url:        originURL,
-		hostHeader: origin.URL,
-		transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-	req, err := http.NewRequest(http.MethodGet, origin.URL, nil)
-	require.NoError(t, err)
-	req.Header.Set("Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
-	req.Header.Set("Test-Cloudflared-Echo", t.Name())
-
-	expectHeader := http.Header{
-		"Connection":            {"Upgrade"},
-		"Sec-Websocket-Accept":  {"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="},
-		"Upgrade":               {"websocket"},
-		"Test-Cloudflared-Echo": {t.Name()},
-	}
-	assertEstablishConnectionResponse(t, httpService, req, expectHeader)
-}
-
-func TestHelloWorldEstablishConnection(t *testing.T) {
-	var wg sync.WaitGroup
-	shutdownC := make(chan struct{})
-	errC := make(chan error)
-	helloWorldSerivce := &helloWorld{}
-	helloWorldSerivce.start(&wg, testLogger, shutdownC, errC, OriginRequestConfig{})
-
-	// Scheme and Host of URL will be override by the Scheme and Host of the helloWorld service
-	req, err := http.NewRequest(http.MethodGet, "https://place-holder/ws", nil)
-	require.NoError(t, err)
-
-	expectHeader := http.Header{
-		"Connection": {"Upgrade"},
-		// Accept key when Sec-Websocket-Key is not specified
-		"Sec-Websocket-Accept": {"Kfh9QIsMVZcl6xEPYxPHzW8SZ8w="},
-		"Upgrade":              {"websocket"},
-	}
-	assertEstablishConnectionResponse(t, helloWorldSerivce, req, expectHeader)
-
-	close(shutdownC)
-}
-
 func TestRawTCPServiceEstablishConnection(t *testing.T) {
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -95,8 +30,6 @@ func TestRawTCPServiceEstablishConnection(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s", originListener.Addr()), nil)
 	require.NoError(t, err)
 
-	assertEstablishConnectionResponse(t, rawTCPService, req, nil)
-
 	originListener.Close()
 	<-listenerClosed
 
@@ -104,9 +37,8 @@ func TestRawTCPServiceEstablishConnection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Origin not listening for new connection, should return an error
-	_, resp, err := rawTCPService.EstablishConnection(req)
+	_, err = rawTCPService.EstablishConnection(req.URL.String())
 	require.Error(t, err)
-	require.Nil(t, resp)
 }
 
 func TestTCPOverWSServiceEstablishConnection(t *testing.T) {
@@ -127,12 +59,6 @@ func TestTCPOverWSServiceEstablishConnection(t *testing.T) {
 
 	bastionReq := baseReq.Clone(context.Background())
 	carrier.SetBastionDest(bastionReq.Header, originListener.Addr().String())
-
-	expectHeader := http.Header{
-		"Connection":           {"Upgrade"},
-		"Sec-Websocket-Accept": {"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="},
-		"Upgrade":              {"websocket"},
-	}
 
 	tests := []struct {
 		testCase  string
@@ -161,11 +87,9 @@ func TestTCPOverWSServiceEstablishConnection(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.testCase, func(t *testing.T) {
 			if test.expectErr {
-				_, resp, err := test.service.EstablishConnection(test.req)
+				bastionHost, _ := carrier.ResolveBastionDest(test.req)
+				_, err := test.service.EstablishConnection(bastionHost)
 				assert.Error(t, err)
-				assert.Nil(t, resp)
-			} else {
-				assertEstablishConnectionResponse(t, test.service, test.req, expectHeader)
 			}
 		})
 	}
@@ -175,9 +99,9 @@ func TestTCPOverWSServiceEstablishConnection(t *testing.T) {
 
 	for _, service := range []*tcpOverWSService{newTCPOverWSService(originURL), newBastionService()} {
 		// Origin not listening for new connection, should return an error
-		_, resp, err := service.EstablishConnection(bastionReq)
+		bastionHost, _ := carrier.ResolveBastionDest(bastionReq)
+		_, err := service.EstablishConnection(bastionHost)
 		assert.Error(t, err)
-		assert.Nil(t, resp)
 	}
 }
 
@@ -195,7 +119,9 @@ func TestHTTPServiceHostHeaderOverride(t *testing.T) {
 			w.WriteHeader(http.StatusSwitchingProtocols)
 			return
 		}
-		w.Write([]byte("ok"))
+		// return the X-Forwarded-Host header for assertions
+		// as the httptest Server URL isn't available here yet
+		w.Write([]byte(r.Header.Get("X-Forwarded-Host")))
 	}
 	origin := httptest.NewServer(http.HandlerFunc(handler))
 	defer origin.Close()
@@ -218,10 +144,10 @@ func TestHTTPServiceHostHeaderOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	req = req.Clone(context.Background())
-	_, resp, err = httpService.EstablishConnection(req)
+	respBody, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	require.Equal(t, respBody, []byte(originURL.Host))
+
 }
 
 func tcpListenRoutine(listener net.Listener, closeChan chan struct{}) {

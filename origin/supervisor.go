@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/cloudflare/cloudflared/connection"
 	"github.com/cloudflare/cloudflared/edgediscovery"
+	"github.com/cloudflare/cloudflared/edgediscovery/allregions"
 	"github.com/cloudflare/cloudflared/h2mux"
 	"github.com/cloudflare/cloudflared/retry"
 	"github.com/cloudflare/cloudflared/signal"
@@ -46,7 +46,7 @@ type Supervisor struct {
 	nextConnectedIndex  int
 	nextConnectedSignal chan struct{}
 
-	log          *zerolog.Logger
+	log          *ConnAwareLogger
 	logTransport *zerolog.Logger
 
 	reconnectCredentialManager *reconnectCredentialManager
@@ -60,7 +60,7 @@ var errEarlyShutdown = errors.New("shutdown started")
 
 type tunnelError struct {
 	index int
-	addr  *net.TCPAddr
+	addr  *allregions.EdgeAddr
 	err   error
 }
 
@@ -74,7 +74,7 @@ func NewSupervisor(config *TunnelConfig, reconnectCh chan ReconnectSignal, grace
 	if len(config.EdgeAddrs) > 0 {
 		edgeIPs, err = edgediscovery.StaticEdge(config.Log, config.EdgeAddrs)
 	} else {
-		edgeIPs, err = edgediscovery.ResolveEdge(config.Log)
+		edgeIPs, err = edgediscovery.ResolveEdge(config.Log, config.Region)
 	}
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func NewSupervisor(config *TunnelConfig, reconnectCh chan ReconnectSignal, grace
 		edgeIPs:                    edgeIPs,
 		tunnelErrors:               make(chan tunnelError),
 		tunnelsConnecting:          map[int]chan struct{}{},
-		log:                        config.Log,
+		log:                        NewConnAwareLogger(config.Log, config.Observer),
 		logTransport:               config.LogTransport,
 		reconnectCredentialManager: newReconnectCredentialManager(connection.MetricsNamespace, connection.TunnelSubsystem, config.HAConnections),
 		useReconnectToken:          useReconnectToken,
@@ -123,7 +123,7 @@ func (s *Supervisor) Run(
 		if timer, err := s.reconnectCredentialManager.RefreshAuth(ctx, refreshAuthBackoff, s.authenticate); err == nil {
 			refreshAuthBackoffTimer = timer
 		} else {
-			s.log.Err(err).
+			s.log.Logger().Err(err).
 				Dur("refreshAuthRetryDuration", refreshAuthRetryDuration).
 				Msgf("supervisor: initial refreshAuth failed, retrying in %v", refreshAuthRetryDuration)
 			refreshAuthBackoffTimer = time.After(refreshAuthRetryDuration)
@@ -145,7 +145,7 @@ func (s *Supervisor) Run(
 		case tunnelError := <-s.tunnelErrors:
 			tunnelsActive--
 			if tunnelError.err != nil && !shuttingDown {
-				s.log.Err(tunnelError.err).Int(connection.LogFieldConnIndex, tunnelError.index).Msg("Connection terminated")
+				s.log.ConnAwareLogger().Err(tunnelError.err).Int(connection.LogFieldConnIndex, tunnelError.index).Msg("Connection terminated")
 				tunnelsWaiting = append(tunnelsWaiting, tunnelError.index)
 				s.waitForNextTunnel(tunnelError.index)
 
@@ -170,7 +170,7 @@ func (s *Supervisor) Run(
 		case <-refreshAuthBackoffTimer:
 			newTimer, err := s.reconnectCredentialManager.RefreshAuth(ctx, refreshAuthBackoff, s.authenticate)
 			if err != nil {
-				s.log.Err(err).Msg("supervisor: Authentication failed")
+				s.log.Logger().Err(err).Msg("supervisor: Authentication failed")
 				// Permanent failure. Leave the `select` without setting the
 				// channel to be non-null, so we'll never hit this case of the `select` again.
 				continue
@@ -195,7 +195,7 @@ func (s *Supervisor) initialize(
 ) error {
 	availableAddrs := s.edgeIPs.AvailableAddrs()
 	if s.config.HAConnections > availableAddrs {
-		s.log.Info().Msgf("You requested %d HA connections but I can give you at most %d.", s.config.HAConnections, availableAddrs)
+		s.log.Logger().Info().Msgf("You requested %d HA connections but I can give you at most %d.", s.config.HAConnections, availableAddrs)
 		s.config.HAConnections = availableAddrs
 	}
 
@@ -226,7 +226,7 @@ func (s *Supervisor) startFirstTunnel(
 	connectedSignal *signal.Signal,
 ) {
 	var (
-		addr *net.TCPAddr
+		addr *allregions.EdgeAddr
 		err  error
 	)
 	const firstConnIndex = 0
@@ -244,6 +244,7 @@ func (s *Supervisor) startFirstTunnel(
 		s.reconnectCredentialManager,
 		s.config,
 		addr,
+		s.log,
 		firstConnIndex,
 		connectedSignal,
 		s.cloudflaredUUID,
@@ -277,6 +278,7 @@ func (s *Supervisor) startFirstTunnel(
 			s.reconnectCredentialManager,
 			s.config,
 			addr,
+			s.log,
 			firstConnIndex,
 			connectedSignal,
 			s.cloudflaredUUID,
@@ -294,7 +296,7 @@ func (s *Supervisor) startTunnel(
 	connectedSignal *signal.Signal,
 ) {
 	var (
-		addr *net.TCPAddr
+		addr *allregions.EdgeAddr
 		err  error
 	)
 	defer func() {
@@ -310,6 +312,7 @@ func (s *Supervisor) startTunnel(
 		s.reconnectCredentialManager,
 		s.config,
 		addr,
+		s.log,
 		uint8(index),
 		connectedSignal,
 		s.cloudflaredUUID,
@@ -347,7 +350,7 @@ func (s *Supervisor) authenticate(ctx context.Context, numPreviousAttempts int) 
 		return nil, err
 	}
 
-	edgeConn, err := edgediscovery.DialEdge(ctx, dialTimeout, s.config.EdgeTLSConfigs[connection.H2mux], arbitraryEdgeIP)
+	edgeConn, err := edgediscovery.DialEdge(ctx, dialTimeout, s.config.EdgeTLSConfigs[connection.H2mux], arbitraryEdgeIP.TCP)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +376,7 @@ func (s *Supervisor) authenticate(ctx context.Context, numPreviousAttempts int) 
 	if err != nil {
 		return nil, err
 	}
-	rpcClient := connection.NewTunnelServerClient(ctx, stream, s.log)
+	rpcClient := connection.NewTunnelServerClient(ctx, stream, s.log.Logger())
 	defer rpcClient.Close()
 
 	const arbitraryConnectionID = uint8(0)

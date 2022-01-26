@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	gws "github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
@@ -19,11 +18,10 @@ import (
 	"github.com/cloudflare/cloudflared/ipaccess"
 	"github.com/cloudflare/cloudflared/socks"
 	"github.com/cloudflare/cloudflared/tlsconfig"
-	"github.com/cloudflare/cloudflared/websocket"
 )
 
-// originService is something a tunnel can proxy traffic to.
-type originService interface {
+// OriginService is something a tunnel can proxy traffic to.
+type OriginService interface {
 	String() string
 	// Start the origin service if it's managed by cloudflared, e.g. proxy servers or Hello World.
 	// If it's not managed by cloudflared, this is a no-op because the user is responsible for
@@ -48,16 +46,6 @@ func (o *unixSocketPath) start(wg *sync.WaitGroup, log *zerolog.Logger, shutdown
 	}
 	o.transport = transport
 	return nil
-}
-
-func (o *unixSocketPath) Dial(reqURL *url.URL, headers http.Header) (*gws.Conn, *http.Response, error) {
-	d := &gws.Dialer{
-		NetDial:         o.transport.Dial,
-		NetDialContext:  o.transport.DialContext,
-		TLSClientConfig: o.transport.TLSClientConfig,
-	}
-	reqURL.Scheme = websocket.ChangeRequestScheme(reqURL)
-	return d.Dial(reqURL.String(), headers)
 }
 
 type httpService struct {
@@ -171,8 +159,8 @@ func (o *socksProxyOverWSService) String() string {
 // HelloWorld is an OriginService for the built-in Hello World server.
 // Users only use this for testing and experimenting with cloudflared.
 type helloWorld struct {
-	server    net.Listener
-	transport *http.Transport
+	httpService
+	server net.Listener
 }
 
 func (o *helloWorld) String() string {
@@ -187,11 +175,10 @@ func (o *helloWorld) start(
 	errC chan error,
 	cfg OriginRequestConfig,
 ) error {
-	transport, err := newHTTPTransport(o, cfg, log)
-	if err != nil {
+	if err := o.httpService.start(wg, log, shutdownC, errC, cfg); err != nil {
 		return err
 	}
-	o.transport = transport
+
 	helloListener, err := hello.CreateTLSListener("127.0.0.1:")
 	if err != nil {
 		return errors.Wrap(err, "Cannot start Hello World Server")
@@ -202,6 +189,12 @@ func (o *helloWorld) start(
 		_ = hello.StartHelloWorldServer(log, helloListener, shutdownC)
 	}()
 	o.server = helloListener
+
+	o.httpService.url = &url.URL{
+		Scheme: "https",
+		Host:   o.server.Addr().String(),
+	}
+
 	return nil
 }
 
@@ -245,7 +238,7 @@ func (nrc *NopReadCloser) Close() error {
 	return nil
 }
 
-func newHTTPTransport(service originService, cfg OriginRequestConfig, log *zerolog.Logger) (*http.Transport, error) {
+func newHTTPTransport(service OriginService, cfg OriginRequestConfig, log *zerolog.Logger) (*http.Transport, error) {
 	originCertPool, err := tlsconfig.LoadOriginCA(cfg.CAPool, log)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error loading cert pool")
