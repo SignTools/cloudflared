@@ -31,8 +31,9 @@ import (
 	"github.com/cloudflare/cloudflared/ingress"
 	"github.com/cloudflare/cloudflared/logger"
 	"github.com/cloudflare/cloudflared/metrics"
-	"github.com/cloudflare/cloudflared/origin"
+	"github.com/cloudflare/cloudflared/orchestration"
 	"github.com/cloudflare/cloudflared/signal"
+	"github.com/cloudflare/cloudflared/supervisor"
 	"github.com/cloudflare/cloudflared/tlsconfig"
 	"github.com/cloudflare/cloudflared/tunneldns"
 )
@@ -108,6 +109,7 @@ func Commands() []*cli.Command {
 		buildIngressSubcommand(),
 		buildDeleteCommand(),
 		buildCleanupCommand(),
+		buildTokenCommand(),
 		// for compatibility, allow following as tunnel subcommands
 		proxydns.Command(true),
 		cliutil.RemovedCommand("db-connect"),
@@ -126,26 +128,34 @@ func buildTunnelCommand(subcommands []*cli.Command) *cli.Command {
 		Name:      "tunnel",
 		Action:    cliutil.ConfiguredAction(TunnelCommand),
 		Category:  "Tunnel",
-		Usage:     "Make a locally-running web service accessible over the internet using Cloudflare Tunnel.",
+		Usage:     "Use Cloudflare Tunnel to expose private services to the Internet or to Cloudflare connected private users.",
 		ArgsUsage: " ",
-		Description: `Cloudflare Tunnel asks you to specify a hostname on a Cloudflare-powered
-		domain you control and a local address. Traffic from that hostname is routed
-		(optionally via a Cloudflare Load Balancer) to this machine and appears on the
-		specified port where it can be served.
+		Description: `    Cloudflare Tunnel allows to expose private services without opening any ingress port on this machine. It can expose:
+  A) Locally reachable HTTP-based private services to the Internet on DNS with Cloudflare as authority (which you can
+then protect with Cloudflare Access).
+  B) Locally reachable TCP/UDP-based private services to Cloudflare connected private users in the same account, e.g.,
+those enrolled to a Zero Trust WARP Client.
 
-		This feature requires your Cloudflare account be subscribed to the Cloudflare Smart Routing feature.
+You can manage your Tunnels via dash.teams.cloudflare.com. This approach will only require you to run a single command
+later in each machine where you wish to run a Tunnel.
 
-		To use, begin by calling login to download a certificate:
+Alternatively, you can manage your Tunnels via the command line. Begin by obtaining a certificate to be able to do so:
 
-			$ cloudflared tunnel login
+	$ cloudflared tunnel login
 
-		With your certificate installed you can then launch your first tunnel,
-		replacing my.site.com with a subdomain of your site:
+With your certificate installed you can then get started with Tunnels:
 
-			$ cloudflared tunnel --hostname my.site.com --url http://localhost:8080
+	$ cloudflared tunnel create my-first-tunnel
+	$ cloudflared tunnel route dns my-first-tunnel my-first-tunnel.mydomain.com
+	$ cloudflared tunnel run --hello-world my-first-tunnel
 
-		If you have a web server running on port 8080 (in this example), it will be available on
-		the internet!`,
+You can now access my-first-tunnel.mydomain.com and be served an example page by your local cloudflared process.
+
+For exposing local TCP/UDP services by IP to your privately connected users, check out:
+
+	$ cloudflared tunnel route ip --help
+
+See https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/tunnel-guide/ for more info.`,
 		Subcommands: subcommands,
 		Flags:       tunnelFlags(false),
 	}
@@ -223,7 +233,7 @@ func routeFromFlag(c *cli.Context) (route cfapi.HostnameRoute, ok bool) {
 func StartServer(
 	c *cli.Context,
 	info *cliutil.BuildInfo,
-	namedTunnel *connection.NamedTunnelConfig,
+	namedTunnel *connection.NamedTunnelProperties,
 	log *zerolog.Logger,
 	isUIEnabled bool,
 ) error {
@@ -333,9 +343,14 @@ func StartServer(
 		observer.SendURL(quickTunnelURL)
 	}
 
-	tunnelConfig, ingressRules, err := prepareTunnelConfig(c, info, log, logTransport, observer, namedTunnel)
+	tunnelConfig, dynamicConfig, err := prepareTunnelConfig(c, info, log, logTransport, observer, namedTunnel)
 	if err != nil {
 		log.Err(err).Msg("Couldn't start tunnel")
+		return err
+	}
+
+	orchestrator, err := orchestration.NewOrchestrator(ctx, dynamicConfig, tunnelConfig.Tags, tunnelConfig.Log)
+	if err != nil {
 		return err
 	}
 
@@ -350,14 +365,10 @@ func StartServer(
 		defer wg.Done()
 		readinessServer := metrics.NewReadyServer(log)
 		observer.RegisterSink(readinessServer)
-		errC <- metrics.ServeMetrics(metricsListener, ctx.Done(), readinessServer, quickTunnelURL, log)
+		errC <- metrics.ServeMetrics(metricsListener, ctx.Done(), readinessServer, quickTunnelURL, orchestrator, log)
 	}()
 
-	if err := ingressRules.StartOrigins(&wg, log, ctx.Done(), errC); err != nil {
-		return err
-	}
-
-	reconnectCh := make(chan origin.ReconnectSignal, 1)
+	reconnectCh := make(chan supervisor.ReconnectSignal, 1)
 	if c.IsSet("stdin-control") {
 		log.Info().Msg("Enabling control through stdin")
 		go stdinControl(reconnectCh, log)
@@ -369,7 +380,7 @@ func StartServer(
 			wg.Done()
 			log.Info().Msg("Tunnel server stopped")
 		}()
-		errC <- origin.StartTunnelDaemon(ctx, tunnelConfig, connectedSignal, reconnectCh, graceShutdownC)
+		errC <- supervisor.StartTunnelDaemon(ctx, tunnelConfig, orchestrator, connectedSignal, reconnectCh, graceShutdownC)
 	}()
 
 	if isUIEnabled {
@@ -377,7 +388,7 @@ func StartServer(
 			info.Version(),
 			hostname,
 			metricsListener.Addr().String(),
-			&ingressRules,
+			dynamicConfig.Ingress,
 			tunnelConfig.HAConnections,
 		)
 		app := tunnelUI.Launch(ctx, log, logTransport)
@@ -722,43 +733,43 @@ func configureProxyFlags(shouldHide bool) []cli.Flag {
 		}),
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:    ingress.Socks5Flag,
-			Usage:   "specify if this tunnel is running as a SOCK5 Server",
+			Usage:   legacyTunnelFlag("specify if this tunnel is running as a SOCK5 Server"),
 			EnvVars: []string{"TUNNEL_SOCKS"},
 			Value:   false,
 			Hidden:  shouldHide,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
 			Name:   ingress.ProxyConnectTimeoutFlag,
-			Usage:  "HTTP proxy timeout for establishing a new connection",
+			Usage:  legacyTunnelFlag("HTTP proxy timeout for establishing a new connection"),
 			Value:  time.Second * 30,
 			Hidden: shouldHide,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
 			Name:   ingress.ProxyTLSTimeoutFlag,
-			Usage:  "HTTP proxy timeout for completing a TLS handshake",
+			Usage:  legacyTunnelFlag("HTTP proxy timeout for completing a TLS handshake"),
 			Value:  time.Second * 10,
 			Hidden: shouldHide,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
 			Name:   ingress.ProxyTCPKeepAliveFlag,
-			Usage:  "HTTP proxy TCP keepalive duration",
+			Usage:  legacyTunnelFlag("HTTP proxy TCP keepalive duration"),
 			Value:  time.Second * 30,
 			Hidden: shouldHide,
 		}),
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:   ingress.ProxyNoHappyEyeballsFlag,
-			Usage:  "HTTP proxy should disable \"happy eyeballs\" for IPv4/v6 fallback",
+			Usage:  legacyTunnelFlag("HTTP proxy should disable \"happy eyeballs\" for IPv4/v6 fallback"),
 			Hidden: shouldHide,
 		}),
 		altsrc.NewIntFlag(&cli.IntFlag{
 			Name:   ingress.ProxyKeepAliveConnectionsFlag,
-			Usage:  "HTTP proxy maximum keepalive connection pool size",
+			Usage:  legacyTunnelFlag("HTTP proxy maximum keepalive connection pool size"),
 			Value:  100,
 			Hidden: shouldHide,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
 			Name:   ingress.ProxyKeepAliveTimeoutFlag,
-			Usage:  "HTTP proxy timeout for closing an idle connection",
+			Usage:  legacyTunnelFlag("HTTP proxy timeout for closing an idle connection"),
 			Value:  time.Second * 90,
 			Hidden: shouldHide,
 		}),
@@ -776,13 +787,13 @@ func configureProxyFlags(shouldHide bool) []cli.Flag {
 		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:    ingress.HTTPHostHeaderFlag,
-			Usage:   "Sets the HTTP Host header for the local webserver.",
+			Usage:   legacyTunnelFlag("Sets the HTTP Host header for the local webserver."),
 			EnvVars: []string{"TUNNEL_HTTP_HOST_HEADER"},
 			Hidden:  shouldHide,
 		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:    ingress.OriginServerNameFlag,
-			Usage:   "Hostname on the origin server certificate.",
+			Usage:   legacyTunnelFlag("Hostname on the origin server certificate."),
 			EnvVars: []string{"TUNNEL_ORIGIN_SERVER_NAME"},
 			Hidden:  shouldHide,
 		}),
@@ -794,24 +805,33 @@ func configureProxyFlags(shouldHide bool) []cli.Flag {
 		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:    tlsconfig.OriginCAPoolFlag,
-			Usage:   "Path to the CA for the certificate of your origin. This option should be used only if your certificate is not signed by Cloudflare.",
+			Usage:   legacyTunnelFlag("Path to the CA for the certificate of your origin. This option should be used only if your certificate is not signed by Cloudflare."),
 			EnvVars: []string{"TUNNEL_ORIGIN_CA_POOL"},
 			Hidden:  shouldHide,
 		}),
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:    ingress.NoTLSVerifyFlag,
-			Usage:   "Disables TLS verification of the certificate presented by your origin. Will allow any certificate from the origin to be accepted. Note: The connection from your machine to Cloudflare's Edge is still encrypted.",
+			Usage:   legacyTunnelFlag("Disables TLS verification of the certificate presented by your origin. Will allow any certificate from the origin to be accepted. Note: The connection from your machine to Cloudflare's Edge is still encrypted."),
 			EnvVars: []string{"NO_TLS_VERIFY"},
 			Hidden:  shouldHide,
 		}),
 		altsrc.NewBoolFlag(&cli.BoolFlag{
 			Name:    ingress.NoChunkedEncodingFlag,
-			Usage:   "Disables chunked transfer encoding; useful if you are running a WSGI server.",
+			Usage:   legacyTunnelFlag("Disables chunked transfer encoding; useful if you are running a WSGI server."),
 			EnvVars: []string{"TUNNEL_NO_CHUNKED_ENCODING"},
 			Hidden:  shouldHide,
 		}),
 	}
 	return append(flags, sshFlags(shouldHide)...)
+}
+
+func legacyTunnelFlag(msg string) string {
+	return fmt.Sprintf(
+		"%s This flag only takes effect if you define your origin with `--url` and if you do not use ingress rules."+
+			" The recommended way is to rely on ingress rules and define this property under `originRequest` as per"+
+			" https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configuration/configuration-file/ingress",
+		msg,
+	)
 }
 
 func sshFlags(shouldHide bool) []cli.Flag {
@@ -998,7 +1018,7 @@ func configureProxyDNSFlags(shouldHide bool) []cli.Flag {
 	}
 }
 
-func stdinControl(reconnectCh chan origin.ReconnectSignal, log *zerolog.Logger) {
+func stdinControl(reconnectCh chan supervisor.ReconnectSignal, log *zerolog.Logger) {
 	for {
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -1009,7 +1029,7 @@ func stdinControl(reconnectCh chan origin.ReconnectSignal, log *zerolog.Logger) 
 			case "":
 				break
 			case "reconnect":
-				var reconnect origin.ReconnectSignal
+				var reconnect supervisor.ReconnectSignal
 				if len(parts) > 1 {
 					var err error
 					if reconnect.Delay, err = time.ParseDuration(parts[1]); err != nil {

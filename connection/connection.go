@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 
+	"github.com/cloudflare/cloudflared/tracing"
 	"github.com/cloudflare/cloudflared/tunnelrpc/pogs"
 	"github.com/cloudflare/cloudflared/websocket"
 )
@@ -25,13 +28,12 @@ const (
 
 var switchingProtocolText = fmt.Sprintf("%d %s", http.StatusSwitchingProtocols, http.StatusText(http.StatusSwitchingProtocols))
 
-type Config struct {
-	OriginProxy     OriginProxy
-	GracePeriod     time.Duration
-	ReplaceExisting bool
+type Orchestrator interface {
+	UpdateConfig(version int32, config []byte) *pogs.UpdateConfigurationResponse
+	GetOriginProxy() (OriginProxy, error)
 }
 
-type NamedTunnelConfig struct {
+type NamedTunnelProperties struct {
 	Credentials    Credentials
 	Client         pogs.ClientInfo
 	QuickTunnelUrl string
@@ -42,7 +44,6 @@ type Credentials struct {
 	AccountTag   string
 	TunnelSecret []byte
 	TunnelID     uuid.UUID
-	TunnelName   string
 }
 
 func (c *Credentials) Auth() pogs.TunnelAuth {
@@ -52,7 +53,31 @@ func (c *Credentials) Auth() pogs.TunnelAuth {
 	}
 }
 
-type ClassicTunnelConfig struct {
+// TunnelToken are Credentials but encoded with custom fields namings.
+type TunnelToken struct {
+	AccountTag   string    `json:"a"`
+	TunnelSecret []byte    `json:"s"`
+	TunnelID     uuid.UUID `json:"t"`
+}
+
+func (t TunnelToken) Credentials() Credentials {
+	return Credentials{
+		AccountTag:   t.AccountTag,
+		TunnelSecret: t.TunnelSecret,
+		TunnelID:     t.TunnelID,
+	}
+}
+
+func (t TunnelToken) Encode() (string, error) {
+	val, err := json.Marshal(t)
+	if err != nil {
+		return "", errors.Wrap(err, "could not JSON encode token")
+	}
+
+	return base64.StdEncoding.EncodeToString(val), nil
+}
+
+type ClassicTunnelProperties struct {
 	Hostname   string
 	OriginCert []byte
 	// feature-flag to use new edge reconnect tokens
@@ -67,6 +92,7 @@ const (
 	TypeTCP
 	TypeControlStream
 	TypeHTTP
+	TypeConfiguration
 )
 
 // ShouldFlush returns whether this kind of connection should actively flush data
@@ -96,7 +122,7 @@ func (t Type) String() string {
 
 // OriginProxy is how data flows from cloudflared to the origin services running behind it.
 type OriginProxy interface {
-	ProxyHTTP(w ResponseWriter, req *http.Request, isWebsocket bool) error
+	ProxyHTTP(w ResponseWriter, tr *tracing.TracedRequest, isWebsocket bool) error
 	ProxyTCP(ctx context.Context, rwa ReadWriteAcker, req *TCPRequest) error
 }
 

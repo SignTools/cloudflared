@@ -1621,11 +1621,35 @@ func (c RegistrationServer) UnregisterConnection(ctx context.Context, params fun
 	}
 	return RegistrationServer_unregisterConnection_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
 }
+func (c RegistrationServer) UpdateLocalConfiguration(ctx context.Context, params func(RegistrationServer_updateLocalConfiguration_Params) error, opts ...capnp.CallOption) RegistrationServer_updateLocalConfiguration_Results_Promise {
+	if c.Client == nil {
+		return RegistrationServer_updateLocalConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0xf71695ec7fe85497,
+			MethodID:      2,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:RegistrationServer",
+			MethodName:    "updateLocalConfiguration",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 1}
+		call.ParamsFunc = func(s capnp.Struct) error {
+			return params(RegistrationServer_updateLocalConfiguration_Params{Struct: s})
+		}
+	}
+	return RegistrationServer_updateLocalConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
 
 type RegistrationServer_Server interface {
 	RegisterConnection(RegistrationServer_registerConnection) error
 
 	UnregisterConnection(RegistrationServer_unregisterConnection) error
+
+	UpdateLocalConfiguration(RegistrationServer_updateLocalConfiguration) error
 }
 
 func RegistrationServer_ServerToClient(s RegistrationServer_Server) RegistrationServer {
@@ -1635,7 +1659,7 @@ func RegistrationServer_ServerToClient(s RegistrationServer_Server) Registration
 
 func RegistrationServer_Methods(methods []server.Method, s RegistrationServer_Server) []server.Method {
 	if cap(methods) == 0 {
-		methods = make([]server.Method, 0, 2)
+		methods = make([]server.Method, 0, 3)
 	}
 
 	methods = append(methods, server.Method{
@@ -1666,6 +1690,20 @@ func RegistrationServer_Methods(methods []server.Method, s RegistrationServer_Se
 		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 0},
 	})
 
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0xf71695ec7fe85497,
+			MethodID:      2,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:RegistrationServer",
+			MethodName:    "updateLocalConfiguration",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := RegistrationServer_updateLocalConfiguration{c, opts, RegistrationServer_updateLocalConfiguration_Params{Struct: p}, RegistrationServer_updateLocalConfiguration_Results{Struct: r}}
+			return s.UpdateLocalConfiguration(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 0},
+	})
+
 	return methods
 }
 
@@ -1683,6 +1721,14 @@ type RegistrationServer_unregisterConnection struct {
 	Options capnp.CallOptions
 	Params  RegistrationServer_unregisterConnection_Params
 	Results RegistrationServer_unregisterConnection_Results
+}
+
+// RegistrationServer_updateLocalConfiguration holds the arguments for a server call to RegistrationServer.updateLocalConfiguration.
+type RegistrationServer_updateLocalConfiguration struct {
+	Ctx     context.Context
+	Options capnp.CallOptions
+	Params  RegistrationServer_updateLocalConfiguration_Params
+	Results RegistrationServer_updateLocalConfiguration_Results
 }
 
 type RegistrationServer_registerConnection_Params struct{ capnp.Struct }
@@ -2014,6 +2060,130 @@ func (p RegistrationServer_unregisterConnection_Results_Promise) Struct() (Regis
 	return RegistrationServer_unregisterConnection_Results{s}, err
 }
 
+type RegistrationServer_updateLocalConfiguration_Params struct{ capnp.Struct }
+
+// RegistrationServer_updateLocalConfiguration_Params_TypeID is the unique identifier for the type RegistrationServer_updateLocalConfiguration_Params.
+const RegistrationServer_updateLocalConfiguration_Params_TypeID = 0xc5d6e311876a3604
+
+func NewRegistrationServer_updateLocalConfiguration_Params(s *capnp.Segment) (RegistrationServer_updateLocalConfiguration_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return RegistrationServer_updateLocalConfiguration_Params{st}, err
+}
+
+func NewRootRegistrationServer_updateLocalConfiguration_Params(s *capnp.Segment) (RegistrationServer_updateLocalConfiguration_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return RegistrationServer_updateLocalConfiguration_Params{st}, err
+}
+
+func ReadRootRegistrationServer_updateLocalConfiguration_Params(msg *capnp.Message) (RegistrationServer_updateLocalConfiguration_Params, error) {
+	root, err := msg.RootPtr()
+	return RegistrationServer_updateLocalConfiguration_Params{root.Struct()}, err
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params) String() string {
+	str, _ := text.Marshal(0xc5d6e311876a3604, s.Struct)
+	return str
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params) Config() ([]byte, error) {
+	p, err := s.Struct.Ptr(0)
+	return []byte(p.Data()), err
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params) HasConfig() bool {
+	p, err := s.Struct.Ptr(0)
+	return p.IsValid() || err != nil
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params) SetConfig(v []byte) error {
+	return s.Struct.SetData(0, v)
+}
+
+// RegistrationServer_updateLocalConfiguration_Params_List is a list of RegistrationServer_updateLocalConfiguration_Params.
+type RegistrationServer_updateLocalConfiguration_Params_List struct{ capnp.List }
+
+// NewRegistrationServer_updateLocalConfiguration_Params creates a new list of RegistrationServer_updateLocalConfiguration_Params.
+func NewRegistrationServer_updateLocalConfiguration_Params_List(s *capnp.Segment, sz int32) (RegistrationServer_updateLocalConfiguration_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
+	return RegistrationServer_updateLocalConfiguration_Params_List{l}, err
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params_List) At(i int) RegistrationServer_updateLocalConfiguration_Params {
+	return RegistrationServer_updateLocalConfiguration_Params{s.List.Struct(i)}
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params_List) Set(i int, v RegistrationServer_updateLocalConfiguration_Params) error {
+	return s.List.SetStruct(i, v.Struct)
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Params_List) String() string {
+	str, _ := text.MarshalList(0xc5d6e311876a3604, s.List)
+	return str
+}
+
+// RegistrationServer_updateLocalConfiguration_Params_Promise is a wrapper for a RegistrationServer_updateLocalConfiguration_Params promised by a client call.
+type RegistrationServer_updateLocalConfiguration_Params_Promise struct{ *capnp.Pipeline }
+
+func (p RegistrationServer_updateLocalConfiguration_Params_Promise) Struct() (RegistrationServer_updateLocalConfiguration_Params, error) {
+	s, err := p.Pipeline.Struct()
+	return RegistrationServer_updateLocalConfiguration_Params{s}, err
+}
+
+type RegistrationServer_updateLocalConfiguration_Results struct{ capnp.Struct }
+
+// RegistrationServer_updateLocalConfiguration_Results_TypeID is the unique identifier for the type RegistrationServer_updateLocalConfiguration_Results.
+const RegistrationServer_updateLocalConfiguration_Results_TypeID = 0xe5ceae5d6897d7be
+
+func NewRegistrationServer_updateLocalConfiguration_Results(s *capnp.Segment) (RegistrationServer_updateLocalConfiguration_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return RegistrationServer_updateLocalConfiguration_Results{st}, err
+}
+
+func NewRootRegistrationServer_updateLocalConfiguration_Results(s *capnp.Segment) (RegistrationServer_updateLocalConfiguration_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0})
+	return RegistrationServer_updateLocalConfiguration_Results{st}, err
+}
+
+func ReadRootRegistrationServer_updateLocalConfiguration_Results(msg *capnp.Message) (RegistrationServer_updateLocalConfiguration_Results, error) {
+	root, err := msg.RootPtr()
+	return RegistrationServer_updateLocalConfiguration_Results{root.Struct()}, err
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Results) String() string {
+	str, _ := text.Marshal(0xe5ceae5d6897d7be, s.Struct)
+	return str
+}
+
+// RegistrationServer_updateLocalConfiguration_Results_List is a list of RegistrationServer_updateLocalConfiguration_Results.
+type RegistrationServer_updateLocalConfiguration_Results_List struct{ capnp.List }
+
+// NewRegistrationServer_updateLocalConfiguration_Results creates a new list of RegistrationServer_updateLocalConfiguration_Results.
+func NewRegistrationServer_updateLocalConfiguration_Results_List(s *capnp.Segment, sz int32) (RegistrationServer_updateLocalConfiguration_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 0}, sz)
+	return RegistrationServer_updateLocalConfiguration_Results_List{l}, err
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Results_List) At(i int) RegistrationServer_updateLocalConfiguration_Results {
+	return RegistrationServer_updateLocalConfiguration_Results{s.List.Struct(i)}
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Results_List) Set(i int, v RegistrationServer_updateLocalConfiguration_Results) error {
+	return s.List.SetStruct(i, v.Struct)
+}
+
+func (s RegistrationServer_updateLocalConfiguration_Results_List) String() string {
+	str, _ := text.MarshalList(0xe5ceae5d6897d7be, s.List)
+	return str
+}
+
+// RegistrationServer_updateLocalConfiguration_Results_Promise is a wrapper for a RegistrationServer_updateLocalConfiguration_Results promised by a client call.
+type RegistrationServer_updateLocalConfiguration_Results_Promise struct{ *capnp.Pipeline }
+
+func (p RegistrationServer_updateLocalConfiguration_Results_Promise) Struct() (RegistrationServer_updateLocalConfiguration_Results, error) {
+	s, err := p.Pipeline.Struct()
+	return RegistrationServer_updateLocalConfiguration_Results{s}, err
+}
+
 type TunnelServer struct{ Client capnp.Client }
 
 // TunnelServer_TypeID is the unique identifier for the type TunnelServer.
@@ -2181,6 +2351,28 @@ func (c TunnelServer) UnregisterConnection(ctx context.Context, params func(Regi
 	}
 	return RegistrationServer_unregisterConnection_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
 }
+func (c TunnelServer) UpdateLocalConfiguration(ctx context.Context, params func(RegistrationServer_updateLocalConfiguration_Params) error, opts ...capnp.CallOption) RegistrationServer_updateLocalConfiguration_Results_Promise {
+	if c.Client == nil {
+		return RegistrationServer_updateLocalConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0xf71695ec7fe85497,
+			MethodID:      2,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:RegistrationServer",
+			MethodName:    "updateLocalConfiguration",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 1}
+		call.ParamsFunc = func(s capnp.Struct) error {
+			return params(RegistrationServer_updateLocalConfiguration_Params{Struct: s})
+		}
+	}
+	return RegistrationServer_updateLocalConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
 
 type TunnelServer_Server interface {
 	RegisterTunnel(TunnelServer_registerTunnel) error
@@ -2198,6 +2390,8 @@ type TunnelServer_Server interface {
 	RegisterConnection(RegistrationServer_registerConnection) error
 
 	UnregisterConnection(RegistrationServer_unregisterConnection) error
+
+	UpdateLocalConfiguration(RegistrationServer_updateLocalConfiguration) error
 }
 
 func TunnelServer_ServerToClient(s TunnelServer_Server) TunnelServer {
@@ -2207,7 +2401,7 @@ func TunnelServer_ServerToClient(s TunnelServer_Server) TunnelServer {
 
 func TunnelServer_Methods(methods []server.Method, s TunnelServer_Server) []server.Method {
 	if cap(methods) == 0 {
-		methods = make([]server.Method, 0, 8)
+		methods = make([]server.Method, 0, 9)
 	}
 
 	methods = append(methods, server.Method{
@@ -2318,6 +2512,20 @@ func TunnelServer_Methods(methods []server.Method, s TunnelServer_Server) []serv
 		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
 			call := RegistrationServer_unregisterConnection{c, opts, RegistrationServer_unregisterConnection_Params{Struct: p}, RegistrationServer_unregisterConnection_Results{Struct: r}}
 			return s.UnregisterConnection(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 0},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0xf71695ec7fe85497,
+			MethodID:      2,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:RegistrationServer",
+			MethodName:    "updateLocalConfiguration",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := RegistrationServer_updateLocalConfiguration{c, opts, RegistrationServer_updateLocalConfiguration_Params{Struct: p}, RegistrationServer_updateLocalConfiguration_Results{Struct: r}}
+			return s.UpdateLocalConfiguration(call)
 		},
 		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 0},
 	})
@@ -3880,204 +4088,667 @@ func (p SessionManager_unregisterUdpSession_Results_Promise) Struct() (SessionMa
 	return SessionManager_unregisterUdpSession_Results{s}, err
 }
 
-const schema_db8274f9144abc7e = "x\xda\xccY}p\x14e\x9a\x7f\x9e\xee\x99t\x02\x19" +
-	"f\xbaz 0%\x97\x93\xc2\xf2\x88\x82\x06\xce+\x8e" +
-	"\xb3.\x09\x06\xceD>\xd23p\xe5\x09Zvf\xde" +
-	"\x84\xc9\xcdt\x0f\xdd=\x91 \xc8\x87 b\xf9\x05\x82" +
-	"\"\xca\xc9ayW\xa0\xde\xc1\xa9\xe7\xb2%\xb5\xb2+" +
-	"*\xa5\xa8X\xb0\x85\x8a\xb5\x8b\xc8\xeeJ\xc1\xba\"\xac" +
-	"\xe5\xaeko=\xdd\xd3\x1f\x99\x84$\xc8\xfe\xb1\xffM" +
-	"\x9e~\xde\xf7}>~\xcf\xef}\xde'\xd7wT6" +
-	"r\xf5\xe1\x9a\x08\x80\xbc%\\a\xb1\xba\x0f\x97n\xbf" +
-	"\xeag\xabAN Z\xf7\xbc\xd6\x1a\xff\xd6\\\xfd\x09" +
-	"\x84y\x01`\xca\xe2\x8a\xa5(\xad\xad\x10\x00\xa4U\x15" +
-	"\xbf\x06\xb4\xee\x1b\xb5\xfb\x99\xe7fl\xba\x17\xc4\x04\xef" +
-	"+\x03NaB+J=\x02i\x16\x85u\xd2Q\xfa" +
-	"e\xdd\"^\xb7 \xfe\xc1{\xa4\x1d\xdc:D[\xef" +
-	"\x13\xeaP:d/8(\xd0\xd67\xe6\xdf\xdf\xf1\x0f" +
-	"\x9b\xdfY\x03b\x82\xeb\xb5\xf5+\x95KQ:XI" +
-	"\x9a\x07*\xe7\x02Z_o\x1a\xfd\xfc\x7f\xbe\xf7\xf6Z" +
-	"\x10\xafF(Y\xfai\xe5\xc7\x08(}U\xf9\xbf\x80" +
-	"\xd6\xa1\x0b\x0b\xce\xbf\xfc\xe6\x0d\xf7\x818\x81\x14\x90\x14" +
-	"6T\x8d\xe3\x00\xa5\x9dU\x0d\x80\xd6\xe93\x7f\\w" +
-	"\xf7\x849\x8f\x82<\x019\x800G\x1a\x07\xab\x12\xa4" +
-	"q\xa2\x8a\xaci\x98yhob\xca\xe3\x9b\xcaL\xb7" +
-	"\x15\xf7\x0f\xabC\xe9\xf002\xe8\xd0\xb0\xbb\x00\xad\xdf" +
-	"\x8fx\xea\xbd\xe2M\xaf>^:\xcfV\xaa\x1f^G" +
-	"\xbb\xb5\x0c'\x85q\xddW\xdd\xf9\xd3\x03/=\x01\xf2" +
-	"DD\xebx\xfb5G\xf9m\xbb>\x81\xf9(\xd0\xf1" +
-	"Sv\x0e\xdfA\xc6\xef\xb5u\xdf\xbf\xf6\xb5\x1f?\xfa" +
-	"\xd2\xba\xa7@\xbe\x1a\x11\xc0\x0e\xd6\xd8\xea?\x90B}" +
-	"5\x19\xbf\xe9\xd8\xbe9\xf9\x0d[w8\xee\xdb\xdf\xff" +
-	"\xad\x9a\xe3 d\xadi\xf9&?\xff\xd9\xd4\xb3\xa5\xc0" +
-	"\x84\xe9\xd3\xec\xeas\x088E\xa9\xaeE@\xeb\x86\x8f" +
-	"O\xcd\x9d\xfd\x7f\x1d\xff\x1dX\xbb<\xb2\x94\xd6\xae\xeb" +
-	"8\xb7?\x96\xcc?_\xe6\xb0\x1d\xbb\x9e\xc8.\x946" +
-	"D\xc8\xe1\x87\"d\xc2\x8b\x7fsK\xd5\x92S3w" +
-	"\x838\xd1\xdd\xe6\xc5H\x92\xb6\x09\xdd\xce\x7f\xafl\xf9" +
-	"\xc9\xcb\xe5p\xb2c\xb23\xd2\x8e\xd2>\xdag\xca\xde" +
-	"\x88m\xcf\x03\xfb\xb7^S\xf9\xcc\xd7\xaf\xf4\x17\xe6\x13" +
-	"#\xdaQ\xba0\x82N\xfdj\x04Efd\x0b\x1e\x7f" +
-	"\xbd>\xf4j0\xefr\xf44E\x86E)\xefc\xcf" +
-	"N\x8f\xa8_\xae~\xbdl7[1\x1ckEiL" +
-	"\x8cv\x1b\x19#\xe5\xd6\x05\x8fm\x0c\x9fz\xec-\xb2" +
-	"4\x00\xb80\x01m\xca\x9e\x98\x8e\xd2\x81\x98\x9d\xedX" +
-	"\x0d\x0fh%v\xff\xd3\xffL\xcf|\xf4N?\x96J" +
-	"M\xf1s\xd2\xec8\xfdj\x89\x93\xa1''\xee\xb9\xfb" +
-	"\x8b\x87\x0e\x1f)\x19j\xc7\xf0\xb9\xb8\x9d\xc2\xbdq\x8a" +
-	"\x9f\x87\x80\xb2(\xd9\x9a\x1f\xc5\xbbP:ko\xf7\x85" +
-	"\xad\xcd\x9dR\xc6\xac\xfc\xf9?\x1f\x0f$\xedl\xfc3" +
-	"\x84\x905\xe7_\x17tU-?y2x\xd0\x89\xb8" +
-	"\x1d\x91\x0b\xf6\xd2\xdf\xfe\xd7\xe9G\xce\xe43\xbf\xb2\x81" +
-	"\xe7\xc6l\xe4\xc8i\x04\xcd\x89#\x09\xe85\xb5\x91\x19" +
-	"\xe3\x8e\xb5\x9dvR\xe9lQ5j:)\\9\x8a" +
-	"\xb6\xb8\xe1\xce&\xb6p\xea\xad\xa7\xfb\x94|\xd3\xa8i" +
-	"(\xc9\xa3l\x90\x8dZ\x87\x12\xab\xa9\x01\xb0\xba\xff\x7f" +
-	"\xc3\xad\xcf\xbf1\xe7\x9cS\x0b\xb6\xb1\xf3k&\x134" +
-	"\x1e\xbe\xa7y\xee?\x8e\xdb\x7f.h\xec\xec\x1aB\xa7" +
-	"\xa4\xd4\xd0I\x1dS\xcf\xfc\xcbU\x0f\xbfy\xae?\x08" +
-	"\xae\xaa\xa9CiC\x8d\x0dAR\xfer\xe6\x7f\x1cI" +
-	"D\x13\xe7\xcb\x02Xa'\xaf\xa6\x0b\xa5\x035v\xf2" +
-	"j\xde\"\x98\xdd\xf7\xc9\x1dK>\xbc\xf7\xeb\x0b\xe5\xb9" +
-	"\xb6\xb7~eL\x12\xa5\x83cl~\x19C\xc8xb" +
-	"\xdeoV\x9c\xd9<\xea\x9b\xbe$\x97\xe8B\xa9'a" +
-	"\x93\\b\x9dt\x94~Y\x1f\x08\xcf\xd67\xafx\xe7" +
-	"\xdb@-\xecK\xb4\x92\xc3\x8f\x0bO\x9f\\\xf9\x8b;" +
-	"\xbe\x0b:\xbc7\xf1\x199|(A\x0e/\xfb\xf2\xc9" +
-	"\x9b\x1fY\xf8\xc2\xf7\xc1\xc4&V\xd3R\xb3\xa8\xaa," +
-	"\xa7\x17B\xe9\xeb\xdc\x9f\xe9Ii\xa5\xa0\x16\xa65\x15" +
-	"\xcdEL5\xb3i\xc5dI\xd6`\x144\xd5`m" +
-	"\x88r\x8c\x0f\x01\x84\x10@T\xba\x00\xe4;y\x94s" +
-	"\x1c\x8a\x88qJ\xbd\x98%\xe1\"\x1ee\x93C\x91\xe3" +
-	"\xe2\xc4<\xe2\xe2q\x00r\x8eGy\x09\x87\xc8\xc7\x91" +
-	"\x07\x10\x8b\x1b\x01\xe4%<\xcak8\xb4\x0aL\xcf+" +
-	"*S!j\xce\xd0u\xac\x06\x0e\xab\x01-\x9d\x99z" +
-	"\x8f\xd2\x9e\x83(\x0b\x88\x85\xae\xbbL\x8c\x00\x87\x11@" +
-	"k\x91V\xd4\x8d\xf9\xaa\x89\xd9\\\x92u\xe8\xcc\xc0E" +
-	"X\x01\x1cV\x00\x0e\xe4^\x8a\x19FVSg+\xaa" +
-	"\xd2\xc9t\x00\xf2\xac\x92\x0f\x03x\xa4\x8d.\xbd\x8b\xf5" +
-	"[\x81\x13'\x0a\xe830\xba\xf0\x13\xaf\xdc\x05\x9c8" +
-	"V\xb0t\xd6\x995L\xa6\xe3\xfcL\xc1\xde\x9b\xd7\xd4" +
-	"F\xb4\x8a\xaa\xf3\x01\x99\xee|\x88\xd2\xa9\x8d\xd8\x86\xbe" +
-	"u|_\xebn\xcae\x99jF[\xd4\x0e\xad,\xe4" +
-	"\xad\xfd\x85\xbc\xb5\x14\xf25\x81\x90\xaf\x9a\x0e /\xe3" +
-	"Q\xbe\x9fC\x91/\xc5|m\x1d\x80\xbc\x92G\xf9A" +
-	"\x0e\xad\xb4}HK\x06\x00\xbchv0\xc5,\xea\xcc" +
-	" \xd9\x08\xc06\x1e\xed\xa0\x8f\x00\\\xd1\xcdt\xb2\xdd" +
-	"MBT\xd1\xd3\x8b\xbcD\x0d\x10\xe9\x19K\xb2\x86\x99" +
-	"U;\xe7\xd9\xf2\x866-\x97M\xf7\x90W\xd5\xb6\x9d" +
-	"c\xa7\x01 \x8a#o\x03@N\x14\xa7\x034d;" +
-	"UMgV&k\xa45Ue\xc0\xa7\xcd\x15\xedJ" +
-	"NQ\xd3\xcc;\xa8\xa2\xefA\xce\x01)\xa6w3}" +
-	"\x92\x12\x80\xef\xf86EW\xf8\xbc!W{q\x9cq" +
-	"\x1b\x80\xdc\xcc\xa3\xdc\x16\x88\xe3l\x8a\xe3,\x1e\xe5[" +
-	"\x03q\x9cOql\xe3Q^\xc8\xa1\xa5\xe9\xd9\xce\xac" +
-	"z\x13\x03^\x0f\"\xd00U%\xcf(f\xa5x\xac" +
-	"\xd0\x0afVS\x0d\x8c\xf9\xfc\x0f\x88\xb1@\xa4\x84\xc1" +
-	"09\xc9\x85\x94\x8b(M\x1d\x9fdFQ\xc8\x99\x86" +
-	"\x1c\xf2<\x89L\x03\x90+y\x94\xe3\x1c6\xe8\xcc(" +
-	"\xe6L\x8c\xf9\xd7\xec_\xe2T7|\x01\x18&\xfb\x83" +
-	"\xe1d\x009\xc3\xa3\\\xe0\x10K\xd1\xcbO\x0f\xb0\x01" +
-	"\x8f\x0e\x0a\x17o\x05\x90M\x1e\xe5\x95\x1cZ\x86sH" +
-	"\x0b`\xc6\x8dhm\xc60[\x0a\xee_+2\x86\xd9" +
-	"\xa6\xe9&\x0a\xc0\xa1\x00\x84[\xcd`M\x1dTS-" +
-	"\x99\x1c\xbb9\xcb\xab&\x86\x81\xc30\x0cXT\x0e>" +
-	"\xa2DlN\xb5\xbb\xdeL 0\xfc\x1d\x8f\xf2\xdf\x07" +
-	"\xbc\xa9'\x1e\xbb\x9eG\xf9F\x0e-%\x9d\xd6\x8a\xaa" +
-	"9\x0fx\xa5\xb3\x0c\xf3)\x06\xd1\xb4\xce|8\x0c=" +
-	"\xd4.9\x94\x05;\xaa+y#h^\xb2?\xf3(" +
-	"\xb0\xd7\xf2(O\xed?\x86+\xf2\xcc0\x94N\xd6\xa7" +
-	"B\xc3\xfd\xb0\x0dUY\x9a\x00\x9bd\x0e\xcfO\xd2\x99" +
-	"!\x14s&YQmY\x8e\x19\x94\xde\xf1<\xca\xd7" +
-	"s\x18\xc1\xef-\xc7\x8e\x89\x1b\xfd0\xd52]\xd7t" +
-	"\x8c\xf9\xf7`\x09}\xe9\xd2\x01\xa8\xa9\xcd\xccT\xb29" +
-	"\xa4\xca\xf0\x9a\xb22\x8c\x0eV\xda~\xd8\x1c\xf1\xf8\x06" +
-	"\x02h\xbeWQ\x10\xc2b<\xcaWphu\xeaJ" +
-	"\x9a\xb51\x1d\xb3Zf\x8e\xa2j)\x9e\xa5\xfb\xe0e" +
-	"\xc4\xa5\x1e\x9a\xb4K\xcd\x00o\xd5\xc0\xebuV\x0aB" +
-	"iy[\xadcs\xdc\xb3y\xf98\xff>\xf4\xd2\xbc" +
-	"\xaa\xdd'l\x8f\x92\xd6\x13^\xef\xe7Q\xde\x14\xa0\xf6" +
-	"\x0dD^\x8f\xf2(?\xcd\xa1\x18\x0a\xc51\x04 >" +
-	"I(\xd9\xc4\xa3\xbc\x9d\xeb}k\xb2n\xa6\x9a\xcd\xd9" +
-	"N\x10\x98\xe1K\xc9\xc4\xe6l'\x03\xde\xb8\\z\xab" +
-	"\x1c$\x1eZ\xbb\xa1\xe5\x98\xc9\x9aY:\xa7\xe8\x8a\x99" +
-	"\xedf\xce\xf7\x12\x18\xdd\xa4\x0e\x84\xdbd\x9f\xea!\xfc" +
-	"F\xddF%\x00\x87q>G\x0a,\xd0_\x0c`\xad" +
-	"\xb39Y\xa6\xa9}0\xe0WL\x09\x07h\x0ct\x05" +
-	"\xfa\xeas\x0bfV\xd0T\x83\xec\x0b\xa4~Z\x7f\xa9" +
-	"\xd7\xfd\xd4\xbbt\xba~u0\xf3%:\xdd\xb0\xd5O" +
-	"\xb2\x18\xe2\x9c\xcco\xdb\x01 o\xe7Q~\x81\xc3\x06" +
-	"\xe7\xa6\xc7\x98\xffR.e\xcb\xb9\xcffiP\x9bV" +
-	"r>\xe5Z:+\xe4\x944\x9b\x81\xa5\xbb\x1b\x10\x81" +
-	"C\xb4!\x92/\xe8\xcc00\xab\xa9rQ\xc9ey" +
-	"\xb3\xc7\xeb\xb7\xd4b\xbeMg\xddY\xd4\x8aF\x93i" +
-	"\xb2\xbcP0\x8d\xa1tc~\x80\x88\x1f\x84l\xce(" +
-	"c\xe8:\x9f{\xbc\x00M\xec\xf2)0Z,f=" +
-	"\xee\xb3rZ\xda\xce\x1bD\xe7(\xf9\xbe\x14X1h" +
-	"\xad\xf6\xaat\x97\x91\xff\x9a\xba\x87\x81\x1bvr\xdd\xee" +
-	"h\x03&S\x094\xf2(\xcf\x0a\x98\xdc29\xe0\x87" +
-	"k\xf2\xecv\xdf\x0f\xe1\xdfY\x8fkU-\xcb\x13s" +
-	"\xbb\xc1,9\xd3\x04\xc2-\xbe\xce@\xf6\x05\x0bjn" +
-	"\xa1\xd6\xf6\x90l\x9c\xea\xda(\xf5`+@j\x09\xf2" +
-	"\x98Z\x83\xbe\x99\xd2*\x9c\x0e\x90ZF\xf2\xfb\xd1\xb7" +
-	"TZ\x8b\x09\x80\xd4J\x92?\x88\xde\xc3BZ\x8f\xbb" +
-	"\x00R\x0f\x92x\x0b\xa9\x87x\xbb$\xa4\xcd\xf6\xf6\x9b" +
-	"H\xbe\x9d\xe4\xe1P\x1c\xc3\x00\xd26\xac\x03Hm!" +
-	"\xf9\xcb$\xaf\xe0\xe2X\x01 \xed\xc1.\x80\xd4n\x92" +
-	"\xbfFr!\x1c\xa7\xb7\x95\xb4\x17u\x80\xd4\x8fH\xfe" +
-	"\x06\xc9+G\xc7\xb1\x12@\xdao\xcb_'\xf9\xbb$" +
-	"\xaf\x1a\x13\xc7*\x00\xe9 \xae\x06H\xbdM\xf2#$" +
-	"\x1f\x86q\x1c\x06 \x1d\xc6\xad\x00\xa9#$\xff%\xc9" +
-	"\x87W\xc4q8\x80\xf4\xa9m\xcf1\x92\x7fN\xf2\xea" +
-	"P\x1c\xab\x01\xa4\x13\xb8\x03 \xf59\xc9\x7fG\xf2\x88" +
-	"\x10\xc7\x08\x80t\xd6\xf6\xeb\x0c\xc9+\xb9\xb2\xbe\xdeE" +
-	"TY\xf3\xcek\x86\x972V\xaaqt\xe0\xde\xa6E" +
-	"\xa9A\xc7\xa8?)\x03\xc4(\xa0U\xd0\xb4\xdc\x9c\xde" +
-	"H\x8d\x9aJ\xa7\xe1>\x14b\xfe\xf0\x02\x90\x84\xde\xbd" +
-	"\x0fQMm\xc9xDP\xce:\xae%Y\xa3\xa9h" +
-	"j\xc5\x02\xd4f\x14\x93e<\xce\xd1\x8b\xeaL]\xcb" +
-	"\xcfC\xa6\xe7\xb3\xaa\x92\x1b\x84\x8d\xaa\x80\xc3*(Q" +
-	"\x82\xbb\xf7\xc0\xd4t\xf1g\x8f\x87h\xae\x1c\xd1\xb5\x85" +
-	"i\xf3\x94\xce\xa1\xf0\xd4d\xbf\x7f\x8b\xaa\x01B\xaa\xed" +
-	"Vr\xc5\x1fBO\xbd[\x89d\x83\xd3\x8a\x0c\xf6(" +
-	"pg\x19\x83SI\xef\x86\xb0\xf7\x85\x8a\x811#\x9d" +
-	"\xc3\x95\xf6\x1f\xb2\xf9\x9d\xcct~\xd1\xeb\x96\xde\x16B" +
-	"\xf0\x9a\xbf\xb4\xd5IfD\x87\xe2\xba?\xf3\x19\xfc=" +
-	"\xd4\xcf\xc5\xdf\xcf\xb5\xef\xf6\x9c\x817\x11\xe5~!\x8f" +
-	"\xf2\xa2@\xeeYk?o\xa2\xa4?\x0c\x11y\xae4" +
-	"\x0d\xa1\x8b\xa2\xc0\xa3\xbc\x8c\xc3(=^1\xe6\x0f\x87" +
-	"{\x19\xdd\xfb\xc1NPhQ3\x0cp\x89\x8b\xe6\xc0" +
-	"\xf5\xe1\x8dI\x07\xef\xce\x86\xe6\xb6\xdb\xf5\x0e\x1apo" +
-	"\xf4Xv\xf2E\xdfe\x0d\xce\xa1\x84\xb3\xd1\xf6\x1c\xc6" +
-	"\x1d\xc3\xa2;\xd0\x13\xf7,\x05N\xdc)\xa0?\xaaD" +
-	"w2)n\xd3\x81\x137\x0b\xc8y\x83mt\x07\xd8" +
-	"\xe2\xfa\x07\x80\x13\xd7\x0a\xc8{sitGb\xf5=" +
-	"\xc3\x108q\xb9\x80!o\xde\x8f\xee@M\\\xdc\x05" +
-	"\x9c\x98\x150\xec\x8d\xbc\xd1\x9d\xb9\x8a\xb7\xaf\x06N\x9c" +
-	"\xef\x0f~\xa0\xc1\xf1\xa3\x11-\x17\xa3Pk\xa3\xb4\xf7" +
-	"\x18\xc8\xd1\x02hD\xcb\xed\x81\xf9\x8b5\xc1\xb6\x96;" +
-	"\xc9\x80hZ1Y#5gN\xfdc\x89\x00\xa0\x11" +
-	"\xe5\x10\x06\xe6\x89\x00\x97\xfb\x08M\xb2Z;\xcf?\xb4" +
-	"er\xd7\xff@J\xe2\xfb\xb3\x9a\xce\xf1&b\x81}" +
-	"\xa9\x0b\xac\xe6Q\x1e\xcd\x0d\xda\xf8\x85.\xe6\x85\x0b\xfe" +
-	"(-\xa6\xfd\xff\xd6\xdb\xff05N\xef\xf2(\x1f\x0b" +
-	"\x94\xf5Q\x12~\xc0\xa3|<\xd08}D\xb5~\x8c" +
-	"G\xf9\xbc?\xe4\xfc\xea\x01\x00\xf9<\x8f\xc9@#\"" +
-	"\xfe\x89\x14\xbf\xa3\xeb\xdanC\xd0iC\xc2\xb8\x11 " +
-	"UI\xd7x\xdcnCBN\x1b\"b;@*F" +
-	"\xf2+\x82m\xc8\x18\xbc\x0d 5\x9a\xe4\xe3\xb1\xf7\xbb" +
-	"F(\xea~\xa3\x96\xd3:ge\xd5~\xef6w\xea" +
-	"\x8a\xe6L%\x9b+\xea\x0c\xfc\xab\xb5D6\xcd\x81\xdb" +
-	"\xde\x19\xc7:\x93\x97\x14\x810\x83\x867\x95\xb9\x84\x17" +
-	"\xe5\x90n\x9e\x19\xba\xae\xa1^\xd6\xc4N\xf6\x9bX\xaf" +
-	"\x87\xa5^\xfcf\x1e\xe5y\x94\x8aF'\x15r\xbb\xdf" +
-	"v\xd7\xa6\x95\xa2\xc1\xfa\xf8\x00<\xd3\xbd)\x80\xb1H" +
-	"+\xe62I\x06\x82\xa9\xf7\x94\x85`\xd0f6\xc5\xa2" +
-	".s9\x13d\xf7\xbf!\xe8\xfe\xd3#0Av\xc7" +
-	"\xf8\xe8\xfeo\xab\xef\x04\xd9\x8dA\x9f\x09\xb2\xf3\xc1\xc6" +
-	"h\xef\x09\xf2e<_\x9dk,\xc0\x18\x974X\x1d" +
-	"\xf2<\xd2\xfb\xf7oY\xa5W]\xee\x98\xc0\xbd\x90\xfe" +
-	"\x1c\x00\x00\xff\xff\xa1\x1ap\xe9"
+type UpdateConfigurationResponse struct{ capnp.Struct }
+
+// UpdateConfigurationResponse_TypeID is the unique identifier for the type UpdateConfigurationResponse.
+const UpdateConfigurationResponse_TypeID = 0xdb58ff694ba05cf9
+
+func NewUpdateConfigurationResponse(s *capnp.Segment) (UpdateConfigurationResponse, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1})
+	return UpdateConfigurationResponse{st}, err
+}
+
+func NewRootUpdateConfigurationResponse(s *capnp.Segment) (UpdateConfigurationResponse, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1})
+	return UpdateConfigurationResponse{st}, err
+}
+
+func ReadRootUpdateConfigurationResponse(msg *capnp.Message) (UpdateConfigurationResponse, error) {
+	root, err := msg.RootPtr()
+	return UpdateConfigurationResponse{root.Struct()}, err
+}
+
+func (s UpdateConfigurationResponse) String() string {
+	str, _ := text.Marshal(0xdb58ff694ba05cf9, s.Struct)
+	return str
+}
+
+func (s UpdateConfigurationResponse) LatestAppliedVersion() int32 {
+	return int32(s.Struct.Uint32(0))
+}
+
+func (s UpdateConfigurationResponse) SetLatestAppliedVersion(v int32) {
+	s.Struct.SetUint32(0, uint32(v))
+}
+
+func (s UpdateConfigurationResponse) Err() (string, error) {
+	p, err := s.Struct.Ptr(0)
+	return p.Text(), err
+}
+
+func (s UpdateConfigurationResponse) HasErr() bool {
+	p, err := s.Struct.Ptr(0)
+	return p.IsValid() || err != nil
+}
+
+func (s UpdateConfigurationResponse) ErrBytes() ([]byte, error) {
+	p, err := s.Struct.Ptr(0)
+	return p.TextBytes(), err
+}
+
+func (s UpdateConfigurationResponse) SetErr(v string) error {
+	return s.Struct.SetText(0, v)
+}
+
+// UpdateConfigurationResponse_List is a list of UpdateConfigurationResponse.
+type UpdateConfigurationResponse_List struct{ capnp.List }
+
+// NewUpdateConfigurationResponse creates a new list of UpdateConfigurationResponse.
+func NewUpdateConfigurationResponse_List(s *capnp.Segment, sz int32) (UpdateConfigurationResponse_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1}, sz)
+	return UpdateConfigurationResponse_List{l}, err
+}
+
+func (s UpdateConfigurationResponse_List) At(i int) UpdateConfigurationResponse {
+	return UpdateConfigurationResponse{s.List.Struct(i)}
+}
+
+func (s UpdateConfigurationResponse_List) Set(i int, v UpdateConfigurationResponse) error {
+	return s.List.SetStruct(i, v.Struct)
+}
+
+func (s UpdateConfigurationResponse_List) String() string {
+	str, _ := text.MarshalList(0xdb58ff694ba05cf9, s.List)
+	return str
+}
+
+// UpdateConfigurationResponse_Promise is a wrapper for a UpdateConfigurationResponse promised by a client call.
+type UpdateConfigurationResponse_Promise struct{ *capnp.Pipeline }
+
+func (p UpdateConfigurationResponse_Promise) Struct() (UpdateConfigurationResponse, error) {
+	s, err := p.Pipeline.Struct()
+	return UpdateConfigurationResponse{s}, err
+}
+
+type ConfigurationManager struct{ Client capnp.Client }
+
+// ConfigurationManager_TypeID is the unique identifier for the type ConfigurationManager.
+const ConfigurationManager_TypeID = 0xb48edfbdaa25db04
+
+func (c ConfigurationManager) UpdateConfiguration(ctx context.Context, params func(ConfigurationManager_updateConfiguration_Params) error, opts ...capnp.CallOption) ConfigurationManager_updateConfiguration_Results_Promise {
+	if c.Client == nil {
+		return ConfigurationManager_updateConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0xb48edfbdaa25db04,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:ConfigurationManager",
+			MethodName:    "updateConfiguration",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 8, PointerCount: 1}
+		call.ParamsFunc = func(s capnp.Struct) error { return params(ConfigurationManager_updateConfiguration_Params{Struct: s}) }
+	}
+	return ConfigurationManager_updateConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
+
+type ConfigurationManager_Server interface {
+	UpdateConfiguration(ConfigurationManager_updateConfiguration) error
+}
+
+func ConfigurationManager_ServerToClient(s ConfigurationManager_Server) ConfigurationManager {
+	c, _ := s.(server.Closer)
+	return ConfigurationManager{Client: server.New(ConfigurationManager_Methods(nil, s), c)}
+}
+
+func ConfigurationManager_Methods(methods []server.Method, s ConfigurationManager_Server) []server.Method {
+	if cap(methods) == 0 {
+		methods = make([]server.Method, 0, 1)
+	}
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0xb48edfbdaa25db04,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:ConfigurationManager",
+			MethodName:    "updateConfiguration",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := ConfigurationManager_updateConfiguration{c, opts, ConfigurationManager_updateConfiguration_Params{Struct: p}, ConfigurationManager_updateConfiguration_Results{Struct: r}}
+			return s.UpdateConfiguration(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 1},
+	})
+
+	return methods
+}
+
+// ConfigurationManager_updateConfiguration holds the arguments for a server call to ConfigurationManager.updateConfiguration.
+type ConfigurationManager_updateConfiguration struct {
+	Ctx     context.Context
+	Options capnp.CallOptions
+	Params  ConfigurationManager_updateConfiguration_Params
+	Results ConfigurationManager_updateConfiguration_Results
+}
+
+type ConfigurationManager_updateConfiguration_Params struct{ capnp.Struct }
+
+// ConfigurationManager_updateConfiguration_Params_TypeID is the unique identifier for the type ConfigurationManager_updateConfiguration_Params.
+const ConfigurationManager_updateConfiguration_Params_TypeID = 0xb177ca2526a3ca76
+
+func NewConfigurationManager_updateConfiguration_Params(s *capnp.Segment) (ConfigurationManager_updateConfiguration_Params, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1})
+	return ConfigurationManager_updateConfiguration_Params{st}, err
+}
+
+func NewRootConfigurationManager_updateConfiguration_Params(s *capnp.Segment) (ConfigurationManager_updateConfiguration_Params, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1})
+	return ConfigurationManager_updateConfiguration_Params{st}, err
+}
+
+func ReadRootConfigurationManager_updateConfiguration_Params(msg *capnp.Message) (ConfigurationManager_updateConfiguration_Params, error) {
+	root, err := msg.RootPtr()
+	return ConfigurationManager_updateConfiguration_Params{root.Struct()}, err
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) String() string {
+	str, _ := text.Marshal(0xb177ca2526a3ca76, s.Struct)
+	return str
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) Version() int32 {
+	return int32(s.Struct.Uint32(0))
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) SetVersion(v int32) {
+	s.Struct.SetUint32(0, uint32(v))
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) Config() ([]byte, error) {
+	p, err := s.Struct.Ptr(0)
+	return []byte(p.Data()), err
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) HasConfig() bool {
+	p, err := s.Struct.Ptr(0)
+	return p.IsValid() || err != nil
+}
+
+func (s ConfigurationManager_updateConfiguration_Params) SetConfig(v []byte) error {
+	return s.Struct.SetData(0, v)
+}
+
+// ConfigurationManager_updateConfiguration_Params_List is a list of ConfigurationManager_updateConfiguration_Params.
+type ConfigurationManager_updateConfiguration_Params_List struct{ capnp.List }
+
+// NewConfigurationManager_updateConfiguration_Params creates a new list of ConfigurationManager_updateConfiguration_Params.
+func NewConfigurationManager_updateConfiguration_Params_List(s *capnp.Segment, sz int32) (ConfigurationManager_updateConfiguration_Params_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 8, PointerCount: 1}, sz)
+	return ConfigurationManager_updateConfiguration_Params_List{l}, err
+}
+
+func (s ConfigurationManager_updateConfiguration_Params_List) At(i int) ConfigurationManager_updateConfiguration_Params {
+	return ConfigurationManager_updateConfiguration_Params{s.List.Struct(i)}
+}
+
+func (s ConfigurationManager_updateConfiguration_Params_List) Set(i int, v ConfigurationManager_updateConfiguration_Params) error {
+	return s.List.SetStruct(i, v.Struct)
+}
+
+func (s ConfigurationManager_updateConfiguration_Params_List) String() string {
+	str, _ := text.MarshalList(0xb177ca2526a3ca76, s.List)
+	return str
+}
+
+// ConfigurationManager_updateConfiguration_Params_Promise is a wrapper for a ConfigurationManager_updateConfiguration_Params promised by a client call.
+type ConfigurationManager_updateConfiguration_Params_Promise struct{ *capnp.Pipeline }
+
+func (p ConfigurationManager_updateConfiguration_Params_Promise) Struct() (ConfigurationManager_updateConfiguration_Params, error) {
+	s, err := p.Pipeline.Struct()
+	return ConfigurationManager_updateConfiguration_Params{s}, err
+}
+
+type ConfigurationManager_updateConfiguration_Results struct{ capnp.Struct }
+
+// ConfigurationManager_updateConfiguration_Results_TypeID is the unique identifier for the type ConfigurationManager_updateConfiguration_Results.
+const ConfigurationManager_updateConfiguration_Results_TypeID = 0x958096448eb3373e
+
+func NewConfigurationManager_updateConfiguration_Results(s *capnp.Segment) (ConfigurationManager_updateConfiguration_Results, error) {
+	st, err := capnp.NewStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return ConfigurationManager_updateConfiguration_Results{st}, err
+}
+
+func NewRootConfigurationManager_updateConfiguration_Results(s *capnp.Segment) (ConfigurationManager_updateConfiguration_Results, error) {
+	st, err := capnp.NewRootStruct(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1})
+	return ConfigurationManager_updateConfiguration_Results{st}, err
+}
+
+func ReadRootConfigurationManager_updateConfiguration_Results(msg *capnp.Message) (ConfigurationManager_updateConfiguration_Results, error) {
+	root, err := msg.RootPtr()
+	return ConfigurationManager_updateConfiguration_Results{root.Struct()}, err
+}
+
+func (s ConfigurationManager_updateConfiguration_Results) String() string {
+	str, _ := text.Marshal(0x958096448eb3373e, s.Struct)
+	return str
+}
+
+func (s ConfigurationManager_updateConfiguration_Results) Result() (UpdateConfigurationResponse, error) {
+	p, err := s.Struct.Ptr(0)
+	return UpdateConfigurationResponse{Struct: p.Struct()}, err
+}
+
+func (s ConfigurationManager_updateConfiguration_Results) HasResult() bool {
+	p, err := s.Struct.Ptr(0)
+	return p.IsValid() || err != nil
+}
+
+func (s ConfigurationManager_updateConfiguration_Results) SetResult(v UpdateConfigurationResponse) error {
+	return s.Struct.SetPtr(0, v.Struct.ToPtr())
+}
+
+// NewResult sets the result field to a newly
+// allocated UpdateConfigurationResponse struct, preferring placement in s's segment.
+func (s ConfigurationManager_updateConfiguration_Results) NewResult() (UpdateConfigurationResponse, error) {
+	ss, err := NewUpdateConfigurationResponse(s.Struct.Segment())
+	if err != nil {
+		return UpdateConfigurationResponse{}, err
+	}
+	err = s.Struct.SetPtr(0, ss.Struct.ToPtr())
+	return ss, err
+}
+
+// ConfigurationManager_updateConfiguration_Results_List is a list of ConfigurationManager_updateConfiguration_Results.
+type ConfigurationManager_updateConfiguration_Results_List struct{ capnp.List }
+
+// NewConfigurationManager_updateConfiguration_Results creates a new list of ConfigurationManager_updateConfiguration_Results.
+func NewConfigurationManager_updateConfiguration_Results_List(s *capnp.Segment, sz int32) (ConfigurationManager_updateConfiguration_Results_List, error) {
+	l, err := capnp.NewCompositeList(s, capnp.ObjectSize{DataSize: 0, PointerCount: 1}, sz)
+	return ConfigurationManager_updateConfiguration_Results_List{l}, err
+}
+
+func (s ConfigurationManager_updateConfiguration_Results_List) At(i int) ConfigurationManager_updateConfiguration_Results {
+	return ConfigurationManager_updateConfiguration_Results{s.List.Struct(i)}
+}
+
+func (s ConfigurationManager_updateConfiguration_Results_List) Set(i int, v ConfigurationManager_updateConfiguration_Results) error {
+	return s.List.SetStruct(i, v.Struct)
+}
+
+func (s ConfigurationManager_updateConfiguration_Results_List) String() string {
+	str, _ := text.MarshalList(0x958096448eb3373e, s.List)
+	return str
+}
+
+// ConfigurationManager_updateConfiguration_Results_Promise is a wrapper for a ConfigurationManager_updateConfiguration_Results promised by a client call.
+type ConfigurationManager_updateConfiguration_Results_Promise struct{ *capnp.Pipeline }
+
+func (p ConfigurationManager_updateConfiguration_Results_Promise) Struct() (ConfigurationManager_updateConfiguration_Results, error) {
+	s, err := p.Pipeline.Struct()
+	return ConfigurationManager_updateConfiguration_Results{s}, err
+}
+
+func (p ConfigurationManager_updateConfiguration_Results_Promise) Result() UpdateConfigurationResponse_Promise {
+	return UpdateConfigurationResponse_Promise{Pipeline: p.Pipeline.GetPipeline(0)}
+}
+
+type CloudflaredServer struct{ Client capnp.Client }
+
+// CloudflaredServer_TypeID is the unique identifier for the type CloudflaredServer.
+const CloudflaredServer_TypeID = 0xf548cef9dea2a4a1
+
+func (c CloudflaredServer) RegisterUdpSession(ctx context.Context, params func(SessionManager_registerUdpSession_Params) error, opts ...capnp.CallOption) SessionManager_registerUdpSession_Results_Promise {
+	if c.Client == nil {
+		return SessionManager_registerUdpSession_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0x839445a59fb01686,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:SessionManager",
+			MethodName:    "registerUdpSession",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 16, PointerCount: 2}
+		call.ParamsFunc = func(s capnp.Struct) error { return params(SessionManager_registerUdpSession_Params{Struct: s}) }
+	}
+	return SessionManager_registerUdpSession_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
+func (c CloudflaredServer) UnregisterUdpSession(ctx context.Context, params func(SessionManager_unregisterUdpSession_Params) error, opts ...capnp.CallOption) SessionManager_unregisterUdpSession_Results_Promise {
+	if c.Client == nil {
+		return SessionManager_unregisterUdpSession_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0x839445a59fb01686,
+			MethodID:      1,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:SessionManager",
+			MethodName:    "unregisterUdpSession",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 0, PointerCount: 2}
+		call.ParamsFunc = func(s capnp.Struct) error { return params(SessionManager_unregisterUdpSession_Params{Struct: s}) }
+	}
+	return SessionManager_unregisterUdpSession_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
+func (c CloudflaredServer) UpdateConfiguration(ctx context.Context, params func(ConfigurationManager_updateConfiguration_Params) error, opts ...capnp.CallOption) ConfigurationManager_updateConfiguration_Results_Promise {
+	if c.Client == nil {
+		return ConfigurationManager_updateConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(capnp.ErrorAnswer(capnp.ErrNullClient))}
+	}
+	call := &capnp.Call{
+		Ctx: ctx,
+		Method: capnp.Method{
+			InterfaceID:   0xb48edfbdaa25db04,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:ConfigurationManager",
+			MethodName:    "updateConfiguration",
+		},
+		Options: capnp.NewCallOptions(opts),
+	}
+	if params != nil {
+		call.ParamsSize = capnp.ObjectSize{DataSize: 8, PointerCount: 1}
+		call.ParamsFunc = func(s capnp.Struct) error { return params(ConfigurationManager_updateConfiguration_Params{Struct: s}) }
+	}
+	return ConfigurationManager_updateConfiguration_Results_Promise{Pipeline: capnp.NewPipeline(c.Client.Call(call))}
+}
+
+type CloudflaredServer_Server interface {
+	RegisterUdpSession(SessionManager_registerUdpSession) error
+
+	UnregisterUdpSession(SessionManager_unregisterUdpSession) error
+
+	UpdateConfiguration(ConfigurationManager_updateConfiguration) error
+}
+
+func CloudflaredServer_ServerToClient(s CloudflaredServer_Server) CloudflaredServer {
+	c, _ := s.(server.Closer)
+	return CloudflaredServer{Client: server.New(CloudflaredServer_Methods(nil, s), c)}
+}
+
+func CloudflaredServer_Methods(methods []server.Method, s CloudflaredServer_Server) []server.Method {
+	if cap(methods) == 0 {
+		methods = make([]server.Method, 0, 3)
+	}
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x839445a59fb01686,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:SessionManager",
+			MethodName:    "registerUdpSession",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := SessionManager_registerUdpSession{c, opts, SessionManager_registerUdpSession_Params{Struct: p}, SessionManager_registerUdpSession_Results{Struct: r}}
+			return s.RegisterUdpSession(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 1},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0x839445a59fb01686,
+			MethodID:      1,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:SessionManager",
+			MethodName:    "unregisterUdpSession",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := SessionManager_unregisterUdpSession{c, opts, SessionManager_unregisterUdpSession_Params{Struct: p}, SessionManager_unregisterUdpSession_Results{Struct: r}}
+			return s.UnregisterUdpSession(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 0},
+	})
+
+	methods = append(methods, server.Method{
+		Method: capnp.Method{
+			InterfaceID:   0xb48edfbdaa25db04,
+			MethodID:      0,
+			InterfaceName: "tunnelrpc/tunnelrpc.capnp:ConfigurationManager",
+			MethodName:    "updateConfiguration",
+		},
+		Impl: func(c context.Context, opts capnp.CallOptions, p, r capnp.Struct) error {
+			call := ConfigurationManager_updateConfiguration{c, opts, ConfigurationManager_updateConfiguration_Params{Struct: p}, ConfigurationManager_updateConfiguration_Results{Struct: r}}
+			return s.UpdateConfiguration(call)
+		},
+		ResultsSize: capnp.ObjectSize{DataSize: 0, PointerCount: 1},
+	})
+
+	return methods
+}
+
+const schema_db8274f9144abc7e = "x\xda\xccZ{\x94\x14\xe5\x95\xbf\xb7\xaa{\xaa\x07\xa7" +
+	"\xa9)\xaaa\xa0\x0f\xb3\xb3\xe10\xebB\x82\x0a,Y" +
+	"\xc3\xc6\xcc\x0c\x0e\xc4\x19yLuC\x8eG1\xc7\x9a" +
+	"\xeeofj\xb6\xbb\xaa\xad\xaa\x1e\x81hx\x04D<" +
+	"j\xc4\x80\x0f\x126\x80\xeb\xee\x09\xc6\xacD\xdc,{" +
+	"tWvc\x8c\x1a\x89\xe4h\x16\x83\xd9lB\xd8]" +
+	"9\xb8\xae\xa8\x9b\xc3n\xb4\xf6\xdc\xaa\xae\xc7t73" +
+	"\x8c\xe4\x8f\xfc\xd7s\xeb{\xdc\xfb\xfb~\xf7\xf1\xddo" +
+	"\xae2\x1b;\xb9\xf9\xf1\x8d\"\x80r8\xde\xe0\xb0\xb9" +
+	"?\xd9\xb0\xaf\xfd\x9f\xb7\x80\x92Ft\xbe\xfcLo\xea" +
+	"\xbc\xbd\xe5$\xc4y\x01`\xe1c\xc2\x06\x94\x8f\x08\x02" +
+	"\x80\xfc\xb4\xf0\x1f\x80\xce\x9d\xd3\x9e\xfc\xe6cKw}" +
+	"\x05\xa44\x1f\x0e\x06\\\xf8H\xa2\x17\xe5'\x124\xf2" +
+	"[\x89\xedrc\xa3\x00\xe0\\/]yS\xea\xd5c" +
+	"4:\xbat\x8c\x96~71\x17e\xa4a\xf2\x87\x09" +
+	"Z\xfa\xb3\xc5\x1f\x1f\xf8\xf4\xee\x97\xb7\x82\x94\xe6F-" +
+	"\xfdV\xe3\x06\x94?tG\x9eo\\\x05\xe8\xbc\xb7k" +
+	"\xfa\xe3\xfb\x8f\xfdp\x1bH\x97#T4\x95&\xfd\x0c" +
+	"\x01\xe5\xf6I\x7f\x03\xe8\xbc\xf2\xc1M\xef\x1f\xfe\xc1\xa2" +
+	";A\x9aC\x03\x90\x06<?i\x16\x07(\xff|R" +
+	"\x07\xa0s\xe6\xec\xffm\xff\xd2\x9c\x95\xf7\x832\x079" +
+	"\x808G#>\x9c\x94\xa6\x11S/#m:\x96\xbd" +
+	"r$\xbd\xf0\xc1]U\xaa\xbb\x03?\xb8l.\xca\xf1" +
+	"&R\x08\x9bn\x03t>\xf7\xa7O\xdd\xd7\xfd\xe0\xa6" +
+	"\xdd ]\x19\xec\xc7\x9an\xa4\xd567\xd1~\xff3" +
+	"\xf9\xeb\xc7\xca\xd7~\xef\xc1\x8aB\xee*\xfb\x9b\xe6\xd2" +
+	"\x80#\xee\x0a\xb3F\xdao\xf9\xa7\xe7\x9fz\x08\x94y" +
+	"\x88\xce\x9b\xfd\x9f|\x9d\xdf{\xf0$\xacA\x81\xf4[" +
+	"8#y\x80\xac\x9b\x93\xa4\xb1?\xfe\xd43\x7f\x7f\xff" +
+	"S\xdb\xbf\x0e\xca\xe5\x88\x00.\x9a\xf7&\xff\x97\x06\xec" +
+	"O\xd2n\xbbN<\xbb\xb2\xb8s\xcf\x01\x0f\x1f\xf7\xfb" +
+	"\x8bI\x8e\x83\x98\xb3\xb5\xe77\xc55\x8ff\x1f\xad " +
+	"\x17\xa7O\xcf&\xcf!\xe0\xc2\xe3\xc96\x04t\x16\xfd" +
+	"\xec\xf4\xaa\x15\xdf\x1d\xf8\xeb\xc8\xdc\xb7'o\xa0\xb9\xdb" +
+	"\x07\xce\x1dm\xce\x14\x1f\xafB\xc45\xf6\xad\xc9\x07Q" +
+	"F\xd1=\xcc\xc9\xa4\xc2\x13\x7fp}\xe3\xba\xd3\xcb\x9e" +
+	"\x04i\x9e\xbfL\xab\x98\xa1eF^z\xf4\x8f\xda_" +
+	"\xba\xed\x10(Wb\x00\xd6\x0c\xfa\x86\xf2\"\x91\xec\x8b" +
+	"\x9dl?\xf8\xec/\xee;\\\xc3\xb1\x9d\xe2\x06\x94\x1f" +
+	"sw\xd9/~^>N\xbf\x9c\xd8\xcd\xfcG\xea\xc3" +
+	"\xffx\xb8\x9a\xbf.\xc6G\xc4~\x94_\x11]\x04D" +
+	"\xd7\xbe\xbb\x8f\xee\xf9d\xe2\x9b\xef=]\xef\\\xdfm" +
+	"\xeeG9.\xb9\xe7*\x91&S{\xf0\xcd\xe7\xe6\xc7" +
+	"\xbe\x17%\x9a*\x9d!\xa4\xcb\x12\x11\xad\xf5\xed%I" +
+	"\xfd\x9d-\xcfU\xad\xe6\x0e\x9c:\xa5\x17\xe59Sh" +
+	"\xb5\xf6)48\xf6\xe9\xe1\xed\xd2\xa9\x9f>\xefa\xe2" +
+	"\x19~t\xca\xb0\xcb\xca)\x04Z\xefM_{ ~" +
+	"\xfak/\x90)\x11\x17\x88'\\vN1Q\x96d" +
+	"\xfa\x99\x94[x@'\xfd\xe4\x9f}gI\xfe\x8d\x97" +
+	"\xeb\x98\"\xdf;\xed\x9c\xfc\xc84\xfa\xb5{\x1aYr" +
+	"j\xde\xa1/\xbdu\xef\xf1\xd7*\x96\xb8{\xbf;\xcd" +
+	"\xe5L\xbc\x85\xf6>\xbfv\xdf\xf5\x9as\xc3\xc9j\x18" +
+	"\xdd\x91\xed-\xdfE\xf9\x9a\x16Z\xee3-\xb4\\@" +
+	"\xd0z\xa3\xf7\xb6\x0c\xa3|\xc8\x1d\xfd\x84\xbb6wZ" +
+	"\x9d\xb1\xe9\xa7\x9f{3\xc2\xa9C-\xbfB\x889+" +
+	"\xbfp\xd3p\xe3\x1d\xa7NE\xd5z\xac\xc5\x05\xf8\x88" +
+	";\xf5\x1f\xfe\xe5\xa1\xa1\x9b\xbfs\xect\x84Go\xb4" +
+	"\x98\xc4\xa3\xff\xfa\xab3_=[\xcc\xff\xbb\xeb1\xfe" +
+	"\xe1\xbc\xde\xb2\x98\xe0|\xbb\x85\\\xb8\xa5-\xb9t\xd6" +
+	"\x89\xbe3Q\xbc_\x9c\xbe\x84\x06\xfcr:-\xbe\xe8" +
+	"\x96.\xb6\xf6\xea\x1b\xce\xd4\x10\x0dg,FY\x9a\xe1" +
+	"b=c;\xca\xed\xe9\x16\x00g\xe4ow\xde\xf0\xf8" +
+	"\xf7W\x9e\xf3\x9c\xd8\xd5ejz\x01\xe9r\xdf\x97\xbb" +
+	"W}f\xd6\xd1sQ3\x92ir+\xf9\x13i\xda" +
+	"i\xe0\xea\xb3\x9fo\xbf\xef\x07\xe7\xea\xf9NWz." +
+	"\xcaJ\x9a\xe0ZA\x83\xdfY\xf6\x17\xaf\xa5\xc5\xf4\xfb" +
+	"U\xd06\xd0\xd8[\xd3\xc3(o\xa3\xb1\x0b7\xa7_" +
+	" >\xef\xff\xcb\x03\xffz\xfe\xd8u\x1f\xd4\xd8P\x9e" +
+	"\xd9\x8f\xf2\x8e\x99\xb4\xec\xb6\x99\x82\xbcm\xe6\xe5\x00\xce" +
+	"\x9d'\xbf\xb8\xee'_y\xef\x83j\x86\xb9\x8a\xdc1" +
+	"3\x83\xf2Nw\xc6\xbd3\x89\xb0\x0f\xad\xfe\xcf\x8dg" +
+	"wO\xfbM\xcd\xda\xf3Z\x87Q\xeej\xa5\x91\xd7\xb4" +
+	"\xbe \x1f\xa7_\xce\xab\xc2\xa3\xf3\xbb7\xbe|>r" +
+	"TGZ{\x09\x9e\x07\x85o\x9c\xda\xf4\x8b/\xfe6" +
+	"\x0a\xcf\xd3\xad\xbf\"x^l%xn\x7f\xe7\x91\xeb" +
+	"\xbe\xba\xf6\xdb\x1fE\x08\xf2V\xeb\x16\x9aj\x97u\x9d" +
+	"\x15\xccR,w\xa5\xff3wEN-\xe9\xa5\xc5]" +
+	"e{\x88\xe9\xb6\x96Sm\x96a\x1dV\xc9\xd0-\xd6" +
+	"\x87\xa84\xf31\x80\x18\x02H\xea0\x80r\x0b\x8fJ" +
+	"\x81C\x091ED\x914\x12\x0e\xf1\xa8\xd8\x1cJ\x1c" +
+	"\x97\xa2\x00+\xdd:\x0b@)\xf0\xa8\xac\xe3\x10\xf9\x14" +
+	"\xf2\x00R\xf9\x01\x00e\x1d\x8f\xcaV\x0e\x9d\x123\x8b" +
+	"\xaa\xcet\x10\xed\xa5\xa6\x89M\xc0a\x13\xa0c2\xdb" +
+	"\\\xaf\xf6\x17@d\x11\xb10|\x9b\x8dI\xe00\x09" +
+	"\xe8\x0c\x19e\xd3Z\xa3\xdb\xa8\x152l\xc0d\x16\x0e" +
+	"a\x03p\xd8\x008\x96yYfY\x9a\xa1\xafPu" +
+	"u\x90\x99\x00dY\x82\x8f\x03\x04\xc9\x0b\xfd4'\xcd" +
+	"\xdf\x03\x9c4O\xc00\xd1\xa0OV\xe9\x13\x07\x81\x93" +
+	"Z\x05\xc7d\x83\x9ae3\x13\xd7\xe4K\xee\xda\xbc\xa1" +
+	"w\xa2S\xd6\xbd\x0f\xc8L\xef\x83H\xbbvb\x1f\x86" +
+	"\xda\xf1\xb5\xda][\xd0\x98n\x8b=\xfa\x80Q\x05y" +
+	"o=\xc8{+\x90o\x8d@\xbey\x09\x80r;\x8f" +
+	"\xca]\x1cJ|\x05\xf3ms\x01\x94M<*\xf7p" +
+	"\xe8\xe4\xdcMz\xf2\x00\x10\xa09\xc0T\xbbl2\x8b" +
+	"d\x93\x01\xfbxtA\x9f\x0c\xb8q\x84\x99\xa4\xbb\x7f" +
+	"\x08\xa2j\xe6\x86\x82\x83\x1a\x03\xe9\xa5\xeb4\xcb\xd6\xf4" +
+	"\xc1\xd5\xae\xbc\xa3\xcf(h\xb9\xf5dU\x93\xabg\xeb" +
+	"b\x00Di\xea\x8d\x00\xc8I\xd2\x12\x80\x0emP7" +
+	"L\xe6\xe45+g\xe8:\x03>go\xecW\x0b\xaa" +
+	"\x9ec\xc1F\x0d\xb5\x1by\x1bd\x999\xc2\xcc+\xd4" +
+	"\x08}g\xf7\xa9\xa6\xca\x17-\xa5)\xc0q\xe9\x8d\x00" +
+	"J7\x8fJ_\x04\xc7\x15\x84\xe3r\x1e\x95\x1b\"8" +
+	"\xae!\x1c\xfbxT\xd6r\xe8\x18\xa66\xa8\xe9\xd72" +
+	"\xe0\xcd(\x03-[W\x8b\x8c0\xab\xe0\xb1\xd1(\xd9" +
+	"\x9a\xa1[\xd8\x1cf\x1d@l\x8e %\x8c\xc7\xc9+" +
+	"|J\xf9\x8c2\xf4\xd9\x19f\x95\x85\x82m)\xb1\xc0" +
+	"\x92\xe4b\x00%\xc1\xa3\x92\xe2\xb0\xc3dV\xb9`c" +
+	"sXM\xfc.v\xf5\xe1\x8b\xd00S\x8f\x86\x0b\x00" +
+	"\x94<\x8fJ\x89C\xac\xa0W\\\x12\x89\x06<z," +
+	"\xbcu\x0f\x80b\xf3\xa8l\xe2\xd0\xb1\xbcMz\x00\xf3" +
+	">\xa2my\xcb\xee)\xf9\x7fm\xcc[v\x9fa\xda" +
+	"(\x00\x87\x02\x10o\x0d\x8bu\x0d\x90O\xf5\xe4\x0b\xec" +
+	":\x8d\xd7m\x8c\x03\x87q\x18\xd3\xa9<~\x88\x14\xd8" +
+	"<o\xf7\xad\x99Cd\xf8c\x1e\x95?\x89X3\x9f" +
+	"\xe2\xd8U<*\x9f\xe5\xd0Qs9\xa3\xac\xdb\xab\x81" +
+	"W\x07\xab8\x9fe \xe6L\x16\xd2\xc1\xdf6Q\xc7" +
+	"\xad\x0d}@\x1b,\x9b\xaa\x1d\x01\xbc\\\xca\xab6\x1b" +
+	"\xf5\xc9=\xe7\x02\x7f\x11\xe7\x1c\xd4\x15\x13>g?2" +
+	"U\x9d\xb4h\xaaE+\x8aM\xa6\x1e6t\xaa\x9f\xe2" +
+	"Q\xb9\xba\xfe\x01n,2\xcbR\x07YMx\x88\xd7" +
+	"\xc5Dg9\xb2:\xc3\xbc$s\x85\xc9,\xa1\\\xb0" +
+	"I\x8b&\xc7\xf1\xd4 n\xcd\xe6Q\xb9\x8a\xc3$~" +
+	"\xe4xz\xcc{ <\xa36f\x9a\x86\x89\xcda\x12" +
+	"\xae@\x92\xabl\x80\x86\xde\xcdlU+ \xb9eP" +
+	"\xa8V\x017^\\\x09a\xf3\xc4\xb3;\xc8;\x8a\xa3" +
+	"N\x8a\xe8\xdd\xcc\xa32\x93Cg\xd0Ts\xac\x8f\x99" +
+	"\xa8\x19\xf9\x95\xaandy\x96\xab!\xeb\xe4\x89n\xea" +
+	"\xf2\xc3\xb6 \x985\xf6|\x93U@\xa8L\xefk\xf3" +
+	"tN\x05:\xdf1+L\xc6\xc11o\xee\x0f\xb3E" +
+	"\x10\x0fw\x90\xb3\xdc\xc5\xa3\xb2+\x92WvR\xe4\xbc" +
+	"\x9fG\xe5\x1b\x1cJ\xb1X\x0ac\x00\xd2#\xc4\x92]" +
+	"<*\xfb\xb8\xd1)\x9b\x8d0\xdd\xee\xd6\x06A`V" +
+	"(%\x15\xbb\xb5A\x06\xbcu\xa9\xb151\x0e\x1eF" +
+	"\xbfe\x14\x98\xcd\xbaY\xae\xa0\x92\xcb\x8d0\xef{\x85" +
+	"\x8c\xfe\xa1\x8e\xc5\xdbL\x8d\xf7\x10\x7fE\xbfJ\x8a\xd0" +
+	"aV\xe8\xb8\x02\x8b\x147ch\xeb-\xee\x05\x83\x1a" +
+	"\x0e\x84\x1eS\xe1\x01Z\xbf\x93\xa0\xe3\xda\x8c\xa3\x9c\x7f" +
+	"I\xe8u>)\xe6-\x0e\x03BP\x13\xc4\x80\xc3\x18" +
+	"`G\xce]\xb0&\x14\xc6\xc6\xd3\xaa\xc3S\xcb\x03\x8e" +
+	"\x8a0\xff\x1a\x8b\xfe\xdd_\x92\x0e\x00'%\x05\xc7\xd7" +
+	"\x1c\xfd\xf9BMA\x15\x1b+\xca\xac*\xd9\x9a`\xe8" +
+	"\x16\xed\x15\xe1\xff\xe2z\xfc7C\xfe\xfb\x09m\xc7\x96" +
+	"(\xfd+\x09m\xe7\x9e\x90\xe9R\x8c\xf3\xe8\xbf\xf7\x00" +
+	"\x80\xb2\x8fG\xe5\xdb\x1cvx\xb5\x166\x87=\x9b\x0a" +
+	"e\xbd\x8ab\xb9\x01m9\xb5\x10&=\xc7d\xa5\x82" +
+	"\x9acK\xb1R=\x01\"p\x88\xae\x9f\x14K&\xb3" +
+	",\xd4\x0c])\xab\x05\x8d\xb7\xd7\x07\x15\xaf^.\xf6" +
+	"\x99lDC\xa3lu\xd96+\x0a%\xdb\xba\x98z" +
+	"8\x04\x88\x82\xa4\xa0\x15\xac\xaa\x1c97\xa4B\x00\xd0" +
+	"\xbc\xe10\x0f\x88\xe5\xb2\x16$\x00\xa7`\xe4\xdc\x93\x05" +
+	"q\xa5Z\xac\xcd\x03\x0d\xe3\x06\xacQ\xe1\xceOK\xbf" +
+	"O\xf5\xdb\xd8W&2\xdd\xbdSDT\xa68\xd0\xc9" +
+	"\xa3\xb2<\xa2r\xcf\x82\x88\x1d\xbe\xca+\xfaC;\x84" +
+	"?g\xeb}\xad\xdaX\x91\xd2\x97\x0ff\xc5\x98.\x10" +
+	"\xae\x0f\xc7L4\xaa\xb8\xde\xb4\xdc\xc8\xa9\x85\xea` " +
+	"V\xa7\xb5h\x01r\xf1\x8e\x1e\xddtU\xa9\xcd\x85\x95" +
+	"\x80\xb9\xda_X^\x8f\xbd\x00\xd9u\xc8cv+\x86" +
+	"\xd8\xc8\x9bq\x09@\xf6v\x92\xdf\x85!<\xf26L" +
+	"\x03d7\x91\xfc\x1e\x0c\xee\x93\xf2\x0e<\x08\x90\xbd\x87" +
+	"\xc4\x0f\xd3\xf0\x18\xef\xfa\xa1\xbc\xdb]~\x17\xc9\xf7\x91" +
+	"<\x1eKa\x1c@\xde\x8bs\x01\xb2\x0f\x93\xfc0\xc9" +
+	"\x1b\xb8\x146\x00\xc8\x87p\x18 \xfb$\xc9\x9f!\xb9" +
+	"\x10O\xd1\x95Z>\x82&@\xf6\xefH\xfe}\x92'" +
+	"\xa6\xa70\x01 \x1fu\xe5\xcf\x91\xfcG$o\x9c\x91" +
+	"\xc2F\x00\xf9E\xdc\x02\x90\xfd!\xc9_#\xf9$L" +
+	"\xe1$\x00\xf98\xee\x01\xc8\xbeF\xf2\x7f#\xf9e\x0d" +
+	")\xbc\x0c@\xfe\xb9\xab\xcf\x09\x92\xff\x9a\xe4M\xb1\x14" +
+	"6\x01\xc8\xbf\xc4\x03\x00\xd9_\x93\xfc\xbfI\x9e\x14R" +
+	"\x98\x04\x90\xdfv\xed:K\xf2\x04Wu\x9d\xf3i\\" +
+	"ug\xe3\x0d+\xe0\x09\xab\x04\x16\xf4|\xac\xcf\x10\xe9" +
+	"^\x86b\xd8(\x06D\x11\xd0)\x19Fa\xe5h\xf7" +
+	"\x10mu\xd0\xf2\xef\x87\xcda\xa7\x0c\x90\x84A\xc5\x05" +
+	"\xa2\xa1\xf7\xe4\x83\xe8S\x1d\xea|M4\xab\xabl\x1b" +
+	"\xe5\x12\xb4\x11\x17\xf3A\xa03\xcb\xfa2\xd3(\xaeF" +
+	"f\x165]-\x8c\x13\x02\x1b\x81\xc3F\xa8\xc4!\x7f" +
+	"\xed\xb1\xe3\xe1\x85o\xbb\x01\xa3\xb9jF\xb7\x95\x16\xaf" +
+	"V\x07/&8.\x08\x13\xa5\xa8G\xa2`\xdb\x88Z" +
+	"(\x7f\x9c\x988\xba\x88\xcbtxE\xe0xw\x04\xbf" +
+	"\xe1U\x15\xbf\xea\x944kj\x8b\x82\x0c\xb3\xda\x82\xce" +
+	"O\xc4\xe0\x83a\xe0\xf7\xed]4+ra*\xa86" +
+	"\xb3\xec\xae\x12\x96\x0a\x1a\xcb\x7f\x81\x99b\xb4N\xa8[" +
+	"\x06\xc5\xc6\xbb\x1b\x8c\xae\xad0\xd2\xd5'\xc3\xb9\x8a\xc1" +
+	"\x17\x8d\xe7 \xb3\xbd_=\xfa\x80A\xc5\x8f\x10\xad\xf8" +
+	"&6;\xc3,\xf1b\xce\"\xecT\x8e_\xb1N$" +
+	"ZgX\x9b\xcb\x85\xb1\xee\x7fu\xd6\xabSQ\xfa\xd7" +
+	"\x99\xc8]\x9f\xc8\xbd\x96Ge(Bn\xd6[\xe7\xae" +
+	"\x9f\x09\x9b|\x12\xcfU\xba|\x94~K<*\xb7s" +
+	"(\xaae{\x08\x9b\xc3\xc7\x9fQ \x8cnD\x11\xd7" +
+	"{\xf4<\x03\\\xe7\xbbk$)\x07\xaf\x12\x1f\x0b\xc6" +
+	"\x0b\x16\xd2\x16\x8c{\x80Ak\xbej\xe7\x0b\xf6\x1b:" +
+	"\xbcM\x89\xb7\xd3\xdd\xd2\xd6\x7f\xf5@\xbf\xad-\x1d\xda" +
+	"\x00\x9c\xf4-\x01\xc3V>\xfa\x9d{i\xaf\x09\x9c\xb4" +
+	"[@.x\x97B\xff\xfdI\xdaq7p\xd26\x01" +
+	"\xf9\xe0Y\x09\xfdV\xef\xfc\xf5\x93\x108\xe9\x0e\x01c" +
+	"\xc1{\x1e\xfa\x8db\xe9\xd6a\xe0$M\xc0x\xf0b" +
+	"\x85\xfe\x0b\x86t\xf3\x16\xe0\xa45aC\x13:<;" +
+	":\xd1\xf19\x0fm.\xebG\xb77\xbdQ\x00\x9d\xe8" +
+	"\xf8\xd7+\xfeB\xf7+w\x94\xdf\xa1\x031\xa7\xda\xac" +
+	"\x93J^/\xc0a%\xc2A'*1\x8c\xf4\xc9\x01" +
+	".\xb5\xbfQ\xe3'\x13,D\xfd\xf9\x1f3\xe6\xf2\xf5" +
+	"\xb4\xa6}\x82Nod]\xaa\xad\x9bxT\xa6s\xe3" +
+	"\x96\xd3\xb1\x0bY\xe1\x93_\xa4\xc9\xb4\xfe\x1f\x06\xeb\x1f" +
+	"\xa7p\xfd#\x1e\x95\x13\x11\xb7~\x9d\x84\xaf\xf2\xa8\xbc" +
+	"\x19)G\xdf _?\xc1\xa3\xf2~\xd8\xbc\x7f\xf7n" +
+	"\x00\xe5}\x1e3\x91JK\xfa\x90\x06\xfe\x96\xea\x11\xb7" +
+	"\xceB\xaf\xce\x8a\xe3\x03\x00\xd9\x04\xd5))\xb7\xce\x8a" +
+	"yu\x96\x84\xfd\x00\xd9f\x92\xcf\x8c\xd6Y3\xf0F" +
+	"\x80\xect\x92\xcf\xc6\xd1Wf\xa1l\x86\xe5o\xc1\x18" +
+	"\\\xae\xe9u\x93\xb7\xff\x9a\x80\xf62U+\x94M\x06" +
+	"a\xedP\x096\xdd\x91r\xc6{f\xf0:\x8aY\"" +
+	"a\x1e\xad\xa0\xdb8\x81f\xc5X\x99\xac`\x94\xf3\x03" +
+	"\x05\xd5d\xf9,3\x05/ \xf4\xf1q%\x81\x91W" +
+	"\x7f\x80\xf0u6B\xf613\xe3R\xd34\xd0\xac\xba" +
+	"j,\x08\xaf\x1a\xc1M\x83nL\xd7\xf1\xa8\xac\xa6\xa3" +
+	"\xed\xf4\x8eV\xe9\x0f/Gm9\xb5l\xb1\x1aL\x80" +
+	"gf\xd0\xb0\xb2\x86\x8cr!\x9fa \xd8\xe6\xfa*" +
+	"H\xc7\xad\xfe\xb3L\xf4#a\x93\x1b\x09\xfd7F\xf4" +
+	"\x9f\x12%e\x0fp\xd2\x0a\x8a\x84\xfes\x17\xfaO\xdd" +
+	"R\xd7A\xe0\xa4k(\x12\xfa/\xbd\xe8?_J\xf3" +
+	"_\x02N\x9a\x1fy\x85\xf1\xf1\xa9y\x85\xf1>\xb8\xfe" +
+	"@\x1f*\x09\x95\xab\xce\xa8\x14\xa1\xa2-\x85K\xe8\xd1" +
+	"x\x095r\x9c\x13z\xba\xb8\xe8\x8e\x7f\xf0\x8f&U" +
+	"1\xa7\xf1R{a~j\xfc\xff\x00\x00\x00\xff\xff\xe5" +
+	"\xf9\xce\x8f"
 
 func init() {
 	schemas.Register(schema_db8274f9144abc7e,
@@ -4089,6 +4760,7 @@ func init() {
 		0x8635c6b4f45bf5cd,
 		0x904e297b87fbecea,
 		0x9496331ab9cd463f,
+		0x958096448eb3373e,
 		0x96b74375ce9b0ef6,
 		0x97b3c5c260257622,
 		0x9b87b390babc2ccf,
@@ -4097,16 +4769,21 @@ func init() {
 		0xa766b24d4fe5da35,
 		0xab6d5210c1f26687,
 		0xb046e578094b1ead,
+		0xb177ca2526a3ca76,
+		0xb48edfbdaa25db04,
 		0xb4bf9861fe035d04,
 		0xb5f39f082b9ac18a,
 		0xb70431c0dc014915,
 		0xc082ef6e0d42ed1d,
+		0xc5d6e311876a3604,
 		0xc793e50592935b4a,
 		0xcbd96442ae3bb01a,
 		0xd4d18de97bb12de3,
+		0xdb58ff694ba05cf9,
 		0xdbaa9d03d52b62dc,
 		0xdc3ed6801961e502,
 		0xe3e37d096a5b564e,
+		0xe5ceae5d6897d7be,
 		0xe6646dec8feaa6ee,
 		0xea50d822450d1f17,
 		0xea58385c65416035,
@@ -4114,6 +4791,7 @@ func init() {
 		0xf2c122394f447e8e,
 		0xf2c68e2547ec3866,
 		0xf41a0f001ad49e46,
+		0xf548cef9dea2a4a1,
 		0xf5f383d2785edb86,
 		0xf71695ec7fe85497,
 		0xf9cb7f4431a307d0,

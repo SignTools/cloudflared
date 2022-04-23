@@ -26,15 +26,28 @@ ingress:
 `
 	ing, err := ParseIngress(MustReadIngress(rawYAML))
 	require.NoError(t, err)
-	_, ok := ing.Rules[0].Service.(*unixSocketPath)
+	s, ok := ing.Rules[0].Service.(*unixSocketPath)
 	require.True(t, ok)
+	require.Equal(t, "http", s.scheme)
+}
+
+func TestParseUnixSocketTLS(t *testing.T) {
+	rawYAML := `
+ingress:
+- service: unix+tls:/tmp/echo.sock
+`
+	ing, err := ParseIngress(MustReadIngress(rawYAML))
+	require.NoError(t, err)
+	s, ok := ing.Rules[0].Service.(*unixSocketPath)
+	require.True(t, ok)
+	require.Equal(t, "https", s.scheme)
 }
 
 func Test_parseIngress(t *testing.T) {
 	localhost8000 := MustParseURL(t, "https://localhost:8000")
 	localhost8001 := MustParseURL(t, "https://localhost:8001")
 	fourOhFour := newStatusCode(404)
-	defaultConfig := setConfig(originRequestFromYAML(config.OriginRequestConfig{}), config.OriginRequestConfig{})
+	defaultConfig := setConfig(originRequestFromConfig(config.OriginRequestConfig{}), config.OriginRequestConfig{})
 	require.Equal(t, defaultKeepAliveConnections, defaultConfig.KeepAliveConnections)
 	tr := true
 	type args struct {
@@ -324,7 +337,17 @@ ingress:
 				{
 					Hostname: "socks.foo.com",
 					Service:  newSocksProxyOverWSService(accessPolicy()),
-					Config:   defaultConfig,
+					Config: setConfig(originRequestFromConfig(config.OriginRequestConfig{}), config.OriginRequestConfig{IPRules: []config.IngressIPRule{
+						{
+							Prefix: ipRulePrefix("1.1.1.0/24"),
+							Ports:  []int{80, 443},
+							Allow:  true,
+						},
+						{
+							Prefix: ipRulePrefix("0.0.0.0/0"),
+							Allow:  false,
+						},
+					}}),
 				},
 				{
 					Service: &fourOhFour,
@@ -345,7 +368,7 @@ ingress:
 				{
 					Hostname: "bastion.foo.com",
 					Service:  newBastionService(),
-					Config:   setConfig(originRequestFromYAML(config.OriginRequestConfig{}), config.OriginRequestConfig{BastionMode: &tr}),
+					Config:   setConfig(originRequestFromConfig(config.OriginRequestConfig{}), config.OriginRequestConfig{BastionMode: &tr}),
 				},
 				{
 					Service: &fourOhFour,
@@ -365,7 +388,7 @@ ingress:
 				{
 					Hostname: "bastion.foo.com",
 					Service:  newBastionService(),
-					Config:   setConfig(originRequestFromYAML(config.OriginRequestConfig{}), config.OriginRequestConfig{BastionMode: &tr}),
+					Config:   setConfig(originRequestFromConfig(config.OriginRequestConfig{}), config.OriginRequestConfig{BastionMode: &tr}),
 				},
 				{
 					Service: &fourOhFour,
@@ -395,6 +418,10 @@ ingress:
 			require.Equal(t, tt.want, got.Rules)
 		})
 	}
+}
+
+func ipRulePrefix(s string) *string {
+	return &s
 }
 
 func TestSingleOriginSetsConfig(t *testing.T) {
@@ -455,12 +482,12 @@ func TestSingleOriginSetsConfig(t *testing.T) {
 	ingress, err := NewSingleOrigin(cliCtx, allowURLFromArgs)
 	require.NoError(t, err)
 
-	assert.Equal(t, time.Second, ingress.Rules[0].Config.ConnectTimeout)
-	assert.Equal(t, time.Second, ingress.Rules[0].Config.TLSTimeout)
-	assert.Equal(t, time.Second, ingress.Rules[0].Config.TCPKeepAlive)
+	assert.Equal(t, config.CustomDuration{Duration: time.Second}, ingress.Rules[0].Config.ConnectTimeout)
+	assert.Equal(t, config.CustomDuration{Duration: time.Second}, ingress.Rules[0].Config.TLSTimeout)
+	assert.Equal(t, config.CustomDuration{Duration: time.Second}, ingress.Rules[0].Config.TCPKeepAlive)
 	assert.True(t, ingress.Rules[0].Config.NoHappyEyeballs)
 	assert.Equal(t, 10, ingress.Rules[0].Config.KeepAliveConnections)
-	assert.Equal(t, time.Second, ingress.Rules[0].Config.KeepAliveTimeout)
+	assert.Equal(t, config.CustomDuration{Duration: time.Second}, ingress.Rules[0].Config.KeepAliveTimeout)
 	assert.Equal(t, "example.com:8080", ingress.Rules[0].Config.HTTPHostHeader)
 	assert.Equal(t, "example.com", ingress.Rules[0].Config.OriginServerName)
 	assert.Equal(t, "/etc/certs/ca.pem", ingress.Rules[0].Config.CAPool)
@@ -481,7 +508,7 @@ func TestFindMatchingRule(t *testing.T) {
 			},
 			{
 				Hostname: "tunnel-b.example.com",
-				Path:     mustParsePath(t, "/health"),
+				Path:     MustParsePath(t, "/health"),
 			},
 			{
 				Hostname: "*",
@@ -564,10 +591,10 @@ func TestIsHTTPService(t *testing.T) {
 	}
 }
 
-func mustParsePath(t *testing.T, path string) *regexp.Regexp {
+func MustParsePath(t *testing.T, path string) *Regexp {
 	regexp, err := regexp.Compile(path)
 	assert.NoError(t, err)
-	return regexp
+	return &Regexp{Regexp: regexp}
 }
 
 func MustParseURL(t *testing.T, rawURL string) *url.URL {

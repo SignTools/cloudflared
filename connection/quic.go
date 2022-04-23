@@ -20,6 +20,7 @@ import (
 	"github.com/cloudflare/cloudflared/datagramsession"
 	"github.com/cloudflare/cloudflared/ingress"
 	quicpogs "github.com/cloudflare/cloudflared/quic"
+	"github.com/cloudflare/cloudflared/tracing"
 	tunnelpogs "github.com/cloudflare/cloudflared/tunnelrpc/pogs"
 )
 
@@ -36,7 +37,7 @@ const (
 type QUICConnection struct {
 	session              quic.Session
 	logger               *zerolog.Logger
-	httpProxy            OriginProxy
+	orchestrator         Orchestrator
 	sessionManager       datagramsession.Manager
 	controlStreamHandler ControlStreamHandler
 	connOptions          *tunnelpogs.ConnectionOptions
@@ -47,7 +48,7 @@ func NewQUICConnection(
 	quicConfig *quic.Config,
 	edgeAddr net.Addr,
 	tlsConfig *tls.Config,
-	httpProxy OriginProxy,
+	orchestrator Orchestrator,
 	connOptions *tunnelpogs.ConnectionOptions,
 	controlStreamHandler ControlStreamHandler,
 	logger *zerolog.Logger,
@@ -66,7 +67,7 @@ func NewQUICConnection(
 
 	return &QUICConnection{
 		session:              session,
-		httpProxy:            httpProxy,
+		orchestrator:         orchestrator,
 		logger:               logger,
 		sessionManager:       sessionManager,
 		controlStreamHandler: controlStreamHandler,
@@ -122,7 +123,7 @@ func (q *QUICConnection) serveControlStream(ctx context.Context, controlStream q
 func (q *QUICConnection) acceptStream(ctx context.Context) error {
 	defer q.Close()
 	for {
-		stream, err := q.session.AcceptStream(ctx)
+		quicStream, err := q.session.AcceptStream(ctx)
 		if err != nil {
 			// context.Canceled is usually a user ctrl+c. We don't want to log an error here as it's intentional.
 			if errors.Is(err, context.Canceled) || q.controlStreamHandler.IsStopped() {
@@ -131,7 +132,9 @@ func (q *QUICConnection) acceptStream(ctx context.Context) error {
 			return fmt.Errorf("failed to accept QUIC stream: %w", err)
 		}
 		go func() {
+			stream := quicpogs.NewSafeStreamCloser(quicStream)
 			defer stream.Close()
+
 			if err = q.handleStream(stream); err != nil {
 				q.logger.Err(err).Msg("Failed to handle QUIC stream")
 			}
@@ -144,7 +147,7 @@ func (q *QUICConnection) Close() {
 	q.session.CloseWithError(0, "")
 }
 
-func (q *QUICConnection) handleStream(stream quic.Stream) error {
+func (q *QUICConnection) handleStream(stream io.ReadWriteCloser) error {
 	signature, err := quicpogs.DetermineProtocol(stream)
 	if err != nil {
 		return err
@@ -173,24 +176,28 @@ func (q *QUICConnection) handleDataStream(stream *quicpogs.RequestServerStream) 
 		return err
 	}
 
+	originProxy, err := q.orchestrator.GetOriginProxy()
+	if err != nil {
+		return err
+	}
 	switch connectRequest.Type {
 	case quicpogs.ConnectionTypeHTTP, quicpogs.ConnectionTypeWebsocket:
-		req, err := buildHTTPRequest(connectRequest, stream)
+		tracedReq, err := buildHTTPRequest(connectRequest, stream)
 		if err != nil {
 			return err
 		}
 
 		w := newHTTPResponseAdapter(stream)
-		return q.httpProxy.ProxyHTTP(w, req, connectRequest.Type == quicpogs.ConnectionTypeWebsocket)
+		return originProxy.ProxyHTTP(w, tracedReq, connectRequest.Type == quicpogs.ConnectionTypeWebsocket)
 	case quicpogs.ConnectionTypeTCP:
 		rwa := &streamReadWriteAcker{stream}
-		return q.httpProxy.ProxyTCP(context.Background(), rwa, &TCPRequest{Dest: connectRequest.Dest})
+		return originProxy.ProxyTCP(context.Background(), rwa, &TCPRequest{Dest: connectRequest.Dest})
 	}
 	return nil
 }
 
 func (q *QUICConnection) handleRPCStream(rpcStream *quicpogs.RPCServerStream) error {
-	return rpcStream.Serve(q, q.logger)
+	return rpcStream.Serve(q, q, q.logger)
 }
 
 // RegisterUdpSession is the RPC method invoked by edge to register and run a session
@@ -258,6 +265,11 @@ func (q *QUICConnection) UnregisterUdpSession(ctx context.Context, sessionID uui
 	return q.sessionManager.UnregisterSession(ctx, sessionID, message, true)
 }
 
+// UpdateConfiguration is the RPC method invoked by edge when there is a new configuration
+func (q *QUICConnection) UpdateConfiguration(ctx context.Context, version int32, config []byte) *tunnelpogs.UpdateConfigurationResponse {
+	return q.orchestrator.UpdateConfig(version, config)
+}
+
 // streamReadWriteAcker is a light wrapper over QUIC streams with a callback to send response back to
 // the client.
 type streamReadWriteAcker struct {
@@ -294,7 +306,7 @@ func (hrw httpResponseAdapter) WriteErrorResponse(err error) {
 	hrw.WriteConnectResponseData(err, quicpogs.Metadata{Key: "HttpStatus", Val: strconv.Itoa(http.StatusBadGateway)})
 }
 
-func buildHTTPRequest(connectRequest *quicpogs.ConnectRequest, body io.ReadCloser) (*http.Request, error) {
+func buildHTTPRequest(connectRequest *quicpogs.ConnectRequest, body io.ReadCloser) (*tracing.TracedRequest, error) {
 	metadata := connectRequest.MetadataMap()
 	dest := connectRequest.Dest
 	method := metadata[HTTPMethodKey]
@@ -331,10 +343,13 @@ func buildHTTPRequest(connectRequest *quicpogs.ConnectRequest, body io.ReadClose
 	//   * there is no transfer-encoding=chunked already set.
 	// So, if transfer cannot be chunked and content length is 0, we dont set a request body.
 	if !isWebsocket && !isTransferEncodingChunked(req) && req.ContentLength == 0 {
-		req.Body = nil
+		req.Body = http.NoBody
 	}
 	stripWebsocketUpgradeHeader(req)
-	return req, err
+
+	// Check for tracing on request
+	tracedReq := tracing.NewTracedRequest(req)
+	return tracedReq, err
 }
 
 func setContentLength(req *http.Request) error {

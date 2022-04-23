@@ -1,19 +1,21 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v2"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/cloudflare/cloudflared/validation"
 )
@@ -49,7 +51,7 @@ func DefaultConfigDirectory() string {
 		path := os.Getenv("CFDPATH")
 		if path == "" {
 			path = filepath.Join(os.Getenv("ProgramFiles(x86)"), "cloudflared")
-			if _, err := os.Stat(path); os.IsNotExist(err) { //doesn't exist, so return an empty failure string
+			if _, err := os.Stat(path); os.IsNotExist(err) { // doesn't exist, so return an empty failure string
 				return ""
 			}
 		}
@@ -138,7 +140,7 @@ func FindOrCreateConfigPath() string {
 		defer file.Close()
 
 		logDir := DefaultLogDirectory()
-		_ = os.MkdirAll(logDir, os.ModePerm) //try and create it. Doesn't matter if it succeed or not, only byproduct will be no logs
+		_ = os.MkdirAll(logDir, os.ModePerm) // try and create it. Doesn't matter if it succeed or not, only byproduct will be no logs
 
 		c := Root{
 			LogDirectory: logDir,
@@ -175,60 +177,62 @@ func ValidateUrl(c *cli.Context, allowURLFromArgs bool) (*url.URL, error) {
 }
 
 type UnvalidatedIngressRule struct {
-	Hostname      string
-	Path          string
-	Service       string
-	OriginRequest OriginRequestConfig `yaml:"originRequest"`
+	Hostname      string              `json:"hostname"`
+	Path          string              `json:"path"`
+	Service       string              `json:"service"`
+	OriginRequest OriginRequestConfig `yaml:"originRequest" json:"originRequest"`
 }
 
 // OriginRequestConfig is a set of optional fields that users may set to
 // customize how cloudflared sends requests to origin services. It is used to set
 // up general config that apply to all rules, and also, specific per-rule
 // config.
-// Note: To specify a time.Duration in go-yaml, use e.g. "3s" or "24h".
+// Note:
+// - To specify a time.Duration in go-yaml, use e.g. "3s" or "24h".
+// - To specify a time.Duration in json, use int64 of the nanoseconds
 type OriginRequestConfig struct {
 	// HTTP proxy timeout for establishing a new connection
-	ConnectTimeout *time.Duration `yaml:"connectTimeout"`
+	ConnectTimeout *CustomDuration `yaml:"connectTimeout" json:"connectTimeout"`
 	// HTTP proxy timeout for completing a TLS handshake
-	TLSTimeout *time.Duration `yaml:"tlsTimeout"`
+	TLSTimeout *CustomDuration `yaml:"tlsTimeout" json:"tlsTimeout"`
 	// HTTP proxy TCP keepalive duration
-	TCPKeepAlive *time.Duration `yaml:"tcpKeepAlive"`
+	TCPKeepAlive *CustomDuration `yaml:"tcpKeepAlive" json:"tcpKeepAlive"`
 	// HTTP proxy should disable "happy eyeballs" for IPv4/v6 fallback
-	NoHappyEyeballs *bool `yaml:"noHappyEyeballs"`
+	NoHappyEyeballs *bool `yaml:"noHappyEyeballs" json:"noHappyEyeballs"`
 	// HTTP proxy maximum keepalive connection pool size
-	KeepAliveConnections *int `yaml:"keepAliveConnections"`
+	KeepAliveConnections *int `yaml:"keepAliveConnections" json:"keepAliveConnections"`
 	// HTTP proxy timeout for closing an idle connection
-	KeepAliveTimeout *time.Duration `yaml:"keepAliveTimeout"`
+	KeepAliveTimeout *CustomDuration `yaml:"keepAliveTimeout" json:"keepAliveTimeout"`
 	// Sets the HTTP Host header for the local webserver.
-	HTTPHostHeader *string `yaml:"httpHostHeader"`
+	HTTPHostHeader *string `yaml:"httpHostHeader" json:"httpHostHeader"`
 	// Hostname on the origin server certificate.
-	OriginServerName *string `yaml:"originServerName"`
+	OriginServerName *string `yaml:"originServerName" json:"originServerName"`
 	// Path to the CA for the certificate of your origin.
 	// This option should be used only if your certificate is not signed by Cloudflare.
-	CAPool *string `yaml:"caPool"`
+	CAPool *string `yaml:"caPool" json:"caPool"`
 	// Disables TLS verification of the certificate presented by your origin.
 	// Will allow any certificate from the origin to be accepted.
 	// Note: The connection from your machine to Cloudflare's Edge is still encrypted.
-	NoTLSVerify *bool `yaml:"noTLSVerify"`
+	NoTLSVerify *bool `yaml:"noTLSVerify" json:"noTLSVerify"`
 	// Disables chunked transfer encoding.
 	// Useful if you are running a WSGI server.
-	DisableChunkedEncoding *bool `yaml:"disableChunkedEncoding"`
+	DisableChunkedEncoding *bool `yaml:"disableChunkedEncoding" json:"disableChunkedEncoding"`
 	// Runs as jump host
-	BastionMode *bool `yaml:"bastionMode"`
+	BastionMode *bool `yaml:"bastionMode" json:"bastionMode"`
 	// Listen address for the proxy.
-	ProxyAddress *string `yaml:"proxyAddress"`
+	ProxyAddress *string `yaml:"proxyAddress" json:"proxyAddress"`
 	// Listen port for the proxy.
-	ProxyPort *uint `yaml:"proxyPort"`
+	ProxyPort *uint `yaml:"proxyPort" json:"proxyPort"`
 	// Valid options are 'socks' or empty.
-	ProxyType *string `yaml:"proxyType"`
+	ProxyType *string `yaml:"proxyType" json:"proxyType"`
 	// IP rules for the proxy service
-	IPRules []IngressIPRule `yaml:"ipRules"`
+	IPRules []IngressIPRule `yaml:"ipRules" json:"ipRules"`
 }
 
 type IngressIPRule struct {
-	Prefix *string `yaml:"prefix"`
-	Ports  []int   `yaml:"ports"`
-	Allow  bool    `yaml:"allow"`
+	Prefix *string `yaml:"prefix" json:"prefix"`
+	Ports  []int   `yaml:"ports" json:"ports"`
+	Allow  bool    `yaml:"allow" json:"allow"`
 }
 
 type Configuration struct {
@@ -240,7 +244,7 @@ type Configuration struct {
 }
 
 type WarpRoutingConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 type configFileSettings struct {
@@ -388,7 +392,7 @@ func ReadConfigFile(c *cli.Context, log *zerolog.Logger) (settings *configFileSe
 	// Parse it again, with strict mode, to find warnings.
 	if file, err := os.Open(configFile); err == nil {
 		decoder := yaml.NewDecoder(file)
-		decoder.SetStrict(true)
+		decoder.KnownFields(true)
 		var unusedConfig configFileSettings
 		if err := decoder.Decode(&unusedConfig); err != nil {
 			warnings = err.Error()
@@ -396,4 +400,35 @@ func ReadConfigFile(c *cli.Context, log *zerolog.Logger) (settings *configFileSe
 	}
 
 	return &configuration, warnings, nil
+}
+
+// A CustomDuration is a Duration that has custom serialization for JSON.
+// JSON in Javascript assumes that int fields are 32 bits and Duration fields are deserialized assuming that numbers
+// are in nanoseconds, which in 32bit integers limits to just 2 seconds.
+// This type assumes that when serializing/deserializing from JSON, that the number is in seconds, while it maintains
+// the YAML serde assumptions.
+type CustomDuration struct {
+	time.Duration
+}
+
+func (s CustomDuration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Duration.Seconds())
+}
+
+func (s *CustomDuration) UnmarshalJSON(data []byte) error {
+	seconds, err := strconv.ParseInt(string(data), 10, 64)
+	if err != nil {
+		return err
+	}
+
+	s.Duration = time.Duration(seconds * int64(time.Second))
+	return nil
+}
+
+func (s *CustomDuration) MarshalYAML() (interface{}, error) {
+	return s.Duration.String(), nil
+}
+
+func (s *CustomDuration) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	return unmarshal(&s.Duration)
 }

@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -65,8 +64,8 @@ func matchHost(ruleHost, reqHost string) bool {
 
 // Ingress maps eyeball requests to origins.
 type Ingress struct {
-	Rules    []Rule
-	defaults OriginRequestConfig
+	Rules    []Rule              `json:"ingress"`
+	Defaults OriginRequestConfig `json:"originRequest"`
 }
 
 // NewSingleOrigin constructs an Ingress set with only one rule, constructed from
@@ -87,7 +86,7 @@ func NewSingleOrigin(c *cli.Context, allowURLFromArgs bool) (Ingress, error) {
 				Config:  setConfig(defaults, config.OriginRequestConfig{}),
 			},
 		},
-		defaults: defaults,
+		Defaults: defaults,
 	}
 	return ing, err
 }
@@ -127,7 +126,7 @@ func parseSingleOriginService(c *cli.Context, allowURLFromArgs bool) (OriginServ
 		if err != nil {
 			return nil, errors.Wrap(err, "Error validating --unix-socket")
 		}
-		return &unixSocketPath{path: path}, nil
+		return &unixSocketPath{path: path, scheme: "http"}, nil
 	}
 	u, err := url.Parse("http://localhost:8080")
 	return &httpService{url: u}, err
@@ -145,13 +144,11 @@ func (ing Ingress) IsSingleRule() bool {
 
 // StartOrigins will start any origin services managed by cloudflared, e.g. proxy servers or Hello World.
 func (ing Ingress) StartOrigins(
-	wg *sync.WaitGroup,
 	log *zerolog.Logger,
 	shutdownC <-chan struct{},
-	errC chan error,
 ) error {
 	for _, rule := range ing.Rules {
-		if err := rule.Service.start(wg, log, shutdownC, errC, rule.Config); err != nil {
+		if err := rule.Service.start(log, shutdownC, rule.Config); err != nil {
 			return errors.Wrapf(err, "Error starting local service %s", rule.Service)
 		}
 	}
@@ -163,7 +160,7 @@ func (ing Ingress) CatchAll() *Rule {
 	return &ing.Rules[len(ing.Rules)-1]
 }
 
-func validate(ingress []config.UnvalidatedIngressRule, defaults OriginRequestConfig) (Ingress, error) {
+func validateIngress(ingress []config.UnvalidatedIngressRule, defaults OriginRequestConfig) (Ingress, error) {
 	rules := make([]Rule, len(ingress))
 	for i, r := range ingress {
 		cfg := setConfig(defaults, r.OriginRequest)
@@ -172,7 +169,10 @@ func validate(ingress []config.UnvalidatedIngressRule, defaults OriginRequestCon
 		if prefix := "unix:"; strings.HasPrefix(r.Service, prefix) {
 			// No validation necessary for unix socket filepath services
 			path := strings.TrimPrefix(r.Service, prefix)
-			service = &unixSocketPath{path: path}
+			service = &unixSocketPath{path: path, scheme: "http"}
+		} else if prefix := "unix+tls:"; strings.HasPrefix(r.Service, prefix) {
+			path := strings.TrimPrefix(r.Service, prefix)
+			service = &unixSocketPath{path: path, scheme: "https"}
 		} else if prefix := "http_status:"; strings.HasPrefix(r.Service, prefix) {
 			status, err := strconv.Atoi(strings.TrimPrefix(r.Service, prefix))
 			if err != nil {
@@ -180,7 +180,7 @@ func validate(ingress []config.UnvalidatedIngressRule, defaults OriginRequestCon
 			}
 			srv := newStatusCode(status)
 			service = &srv
-		} else if r.Service == "hello_world" || r.Service == "hello-world" || r.Service == "helloworld" {
+		} else if r.Service == HelloWorldService || r.Service == "hello-world" || r.Service == "helloworld" {
 			service = new(helloWorld)
 		} else if r.Service == ServiceSocksProxy {
 			rules := make([]ipaccess.Rule, len(r.OriginRequest.IPRules))
@@ -230,23 +230,24 @@ func validate(ingress []config.UnvalidatedIngressRule, defaults OriginRequestCon
 			return Ingress{}, err
 		}
 
-		var pathRegex *regexp.Regexp
+		var pathRegexp *Regexp
 		if r.Path != "" {
 			var err error
-			pathRegex, err = regexp.Compile(r.Path)
+			regex, err := regexp.Compile(r.Path)
 			if err != nil {
 				return Ingress{}, errors.Wrapf(err, "Rule #%d has an invalid regex", i+1)
 			}
+			pathRegexp = &Regexp{Regexp: regex}
 		}
 
 		rules[i] = Rule{
 			Hostname: r.Hostname,
 			Service:  service,
-			Path:     pathRegex,
+			Path:     pathRegexp,
 			Config:   cfg,
 		}
 	}
-	return Ingress{Rules: rules, defaults: defaults}, nil
+	return Ingress{Rules: rules, Defaults: defaults}, nil
 }
 
 func validateHostname(r config.UnvalidatedIngressRule, ruleIndex, totalRules int) error {
@@ -290,7 +291,7 @@ func ParseIngress(conf *config.Configuration) (Ingress, error) {
 	if len(conf.Ingress) == 0 {
 		return Ingress{}, ErrNoIngressRules
 	}
-	return validate(conf.Ingress, originRequestFromYAML(conf.OriginRequest))
+	return validateIngress(conf.Ingress, originRequestFromConfig(conf.OriginRequest))
 }
 
 func isHTTPService(url *url.URL) bool {

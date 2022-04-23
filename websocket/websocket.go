@@ -8,10 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
+	"sync/atomic"
 	"time"
 
+	"github.com/getsentry/raven-go"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+
+	"github.com/cloudflare/cloudflared/cfio"
 )
 
 // IsWebSocketUpgrade checks to see if the request is a WebSocket connection.
@@ -28,28 +33,76 @@ func NewResponseHeader(req *http.Request) http.Header {
 	return header
 }
 
+type bidirectionalStreamStatus struct {
+	doneChan chan struct{}
+	anyDone  uint32
+}
+
+func newBiStreamStatus() *bidirectionalStreamStatus {
+	return &bidirectionalStreamStatus{
+		doneChan: make(chan struct{}, 2),
+		anyDone:  0,
+	}
+}
+
+func (s *bidirectionalStreamStatus) markUniStreamDone() {
+	atomic.StoreUint32(&s.anyDone, 1)
+	s.doneChan <- struct{}{}
+}
+
+func (s *bidirectionalStreamStatus) waitAnyDone() {
+	<-s.doneChan
+}
+func (s *bidirectionalStreamStatus) isAnyDone() bool {
+	return atomic.LoadUint32(&s.anyDone) > 0
+}
+
 // Stream copies copy data to & from provided io.ReadWriters.
 func Stream(tunnelConn, originConn io.ReadWriter, log *zerolog.Logger) {
-	proxyDone := make(chan struct{}, 2)
+	status := newBiStreamStatus()
 
-	go func() {
-		_, err := copyData(tunnelConn, originConn, "origin->tunnel")
-		if err != nil {
-			log.Debug().Msgf("origin to tunnel copy: %v", err)
-		}
-		proxyDone <- struct{}{}
-	}()
-
-	go func() {
-		_, err := copyData(originConn, tunnelConn, "tunnel->origin")
-		if err != nil {
-			log.Debug().Msgf("tunnel to origin copy: %v", err)
-		}
-		proxyDone <- struct{}{}
-	}()
+	go unidirectionalStream(tunnelConn, originConn, "origin->tunnel", status, log)
+	go unidirectionalStream(originConn, tunnelConn, "tunnel->origin", status, log)
 
 	// If one side is done, we are done.
-	<-proxyDone
+	status.waitAnyDone()
+}
+
+func unidirectionalStream(dst io.Writer, src io.Reader, dir string, status *bidirectionalStreamStatus, log *zerolog.Logger) {
+	defer func() {
+		// The bidirectional streaming spawns 2 goroutines to stream each direction.
+		// If any ends, the callstack returns, meaning the Tunnel request/stream (depending on http2 vs quic) will
+		// close. In such case, if the other direction did not stop (due to application level stopping, e.g., if a
+		// server/origin listens forever until closure), it may read/write from the underlying ReadWriter (backed by
+		// the Edge<->cloudflared transport) in an unexpected state.
+		// Because of this, we set this recover() logic.
+		if r := recover(); r != nil {
+			if status.isAnyDone() {
+				// We handle such unexpected errors only when we detect that one side of the streaming is done.
+				log.Debug().Msgf("Gracefully handled error %v in Streaming for %s, error %s", r, dir, debug.Stack())
+			} else {
+				// Otherwise, this is unexpected, but we prevent the program from crashing anyway.
+				log.Warn().Msgf("Gracefully handled unexpected error %v in Streaming for %s, error %s", r, dir, debug.Stack())
+
+				tags := make(map[string]string)
+				tags["root"] = "websocket.stream"
+				tags["dir"] = dir
+				switch rval := r.(type) {
+				case error:
+					raven.CaptureError(rval, tags)
+				default:
+					rvalStr := fmt.Sprint(rval)
+					raven.CaptureMessage(rvalStr, tags)
+				}
+			}
+		}
+	}()
+
+	_, err := copyData(dst, src, dir)
+	if err != nil {
+		log.Debug().Msgf("%s copy: %v", dir, err)
+	}
+	status.markUniStreamDone()
 }
 
 // when set to true, enables logging of content copied to/from origin and tunnel
@@ -95,7 +148,7 @@ func copyData(dst io.Writer, src io.Reader, dir string) (written int64, err erro
 		}
 		return copyBuffer(dst, src, dir)
 	} else {
-		return io.Copy(dst, src)
+		return cfio.Copy(dst, src)
 	}
 }
 

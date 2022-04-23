@@ -19,7 +19,7 @@ import (
 
 const (
 	DefaultCheckUpdateFreq        = time.Hour * 24
-	noUpdateInShellMessage        = "cloudflared will not automatically update when run from the shell. To enable auto-updates, run cloudflared as a service: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/run-tunnel/run-as-service"
+	noUpdateInShellMessage        = "cloudflared will not automatically update when run from the shell. To enable auto-updates, run cloudflared as a service: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/run-tunnel/as-a-service/"
 	noUpdateOnWindowsMessage      = "cloudflared will not automatically update on Windows systems."
 	noUpdateManagedPackageMessage = "cloudflared will not automatically update if installed by a package manager."
 	isManagedInstallFile          = ".installedFromPackageManager"
@@ -30,7 +30,8 @@ const (
 )
 
 var (
-	version string
+	version                string
+	BuiltForPackageManager = ""
 )
 
 // BinaryUpdated implements ExitCoder interface, the app will exit with status code 11
@@ -118,7 +119,11 @@ func Update(c *cli.Context) error {
 	log := logger.CreateLoggerFromContext(c, logger.EnableTerminalLog)
 
 	if wasInstalledFromPackageManager() {
-		log.Error().Msg("cloudflared was installed by a package manager. Please update using the same method.")
+		packageManagerName := "a package manager"
+		if BuiltForPackageManager != "" {
+			packageManagerName = BuiltForPackageManager
+		}
+		log.Error().Msg(fmt.Sprintf("cloudflared was installed by %s. Please update using the same method.", packageManagerName))
 		return nil
 	}
 
@@ -281,7 +286,7 @@ func supportAutoUpdate(log *zerolog.Logger) bool {
 
 func wasInstalledFromPackageManager() bool {
 	ok, _ := config.FileExists(filepath.Join(config.DefaultUnixConfigLocation, isManagedInstallFile))
-	return ok
+	return len(BuiltForPackageManager) != 0 || ok
 }
 
 func isRunningFromTerminal() bool {

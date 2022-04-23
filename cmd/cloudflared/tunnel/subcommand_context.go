@@ -185,7 +185,6 @@ func (sc *subcommandContext) create(name string, credentialsFilePath string, sec
 		AccountTag:   credential.cert.AccountID,
 		TunnelSecret: tunnelSecret,
 		TunnelID:     tunnel.ID,
-		TunnelName:   name,
 	}
 	usedCertPath := false
 	if credentialsFilePath == "" {
@@ -221,7 +220,8 @@ func (sc *subcommandContext) create(name string, credentialsFilePath string, sec
 	}
 	fmt.Println(" Keep this file secret. To revoke these credentials, delete the tunnel.")
 	fmt.Printf("\nCreated tunnel %s with id %s\n", tunnel.Name, tunnel.ID)
-	return tunnel, nil
+
+	return &tunnel.Tunnel, nil
 }
 
 func (sc *subcommandContext) list(filter *cfapi.TunnelFilter) ([]*cfapi.Tunnel, error) {
@@ -301,10 +301,16 @@ func (sc *subcommandContext) run(tunnelID uuid.UUID) error {
 		return err
 	}
 
+	return sc.runWithCredentials(credentials)
+}
+
+func (sc *subcommandContext) runWithCredentials(credentials connection.Credentials) error {
+	sc.log.Info().Str(LogFieldTunnelID, credentials.TunnelID.String()).Msg("Starting tunnel")
+
 	return StartServer(
 		sc.c,
 		buildInfo,
-		&connection.NamedTunnelConfig{Credentials: credentials},
+		&connection.NamedTunnelProperties{Credentials: credentials},
 		sc.log,
 		sc.isUIEnabled,
 	)
@@ -333,6 +339,21 @@ func (sc *subcommandContext) cleanupConnections(tunnelIDs []uuid.UUID) error {
 		}
 	}
 	return nil
+}
+
+func (sc *subcommandContext) getTunnelTokenCredentials(tunnelID uuid.UUID) (*connection.TunnelToken, error) {
+	client, err := sc.client()
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := client.GetTunnelToken(tunnelID)
+	if err != nil {
+		sc.log.Err(err).Msgf("Could not get the Token for the given Tunnel %v", tunnelID)
+		return nil, err
+	}
+
+	return ParseToken(token)
 }
 
 func (sc *subcommandContext) route(tunnelID uuid.UUID, r cfapi.HostnameRoute) (cfapi.HostnameRouteResult, error) {
@@ -370,7 +391,7 @@ func (sc *subcommandContext) findID(input string) (uuid.UUID, error) {
 	// Look up name in the credentials file.
 	credFinder := newStaticPath(sc.c.String(CredFileFlag), sc.fs)
 	if credentials, err := sc.readTunnelCredentials(credFinder); err == nil {
-		if credentials.TunnelID != uuid.Nil && input == credentials.TunnelName {
+		if credentials.TunnelID != uuid.Nil {
 			return credentials.TunnelID, nil
 		}
 	}

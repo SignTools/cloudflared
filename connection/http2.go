@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	gojson "encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/net/http2"
 
+	"github.com/cloudflare/cloudflared/tracing"
 	tunnelpogs "github.com/cloudflare/cloudflared/tunnelrpc/pogs"
 )
 
@@ -23,6 +25,7 @@ const (
 	InternalTCPProxySrcHeader = "Cf-Cloudflared-Proxy-Src"
 	WebsocketUpgrade          = "websocket"
 	ControlStreamUpgrade      = "control-stream"
+	ConfigurationUpdate       = "update-configuration"
 )
 
 var errEdgeConnectionClosed = fmt.Errorf("connection with edge closed")
@@ -30,12 +33,12 @@ var errEdgeConnectionClosed = fmt.Errorf("connection with edge closed")
 // HTTP2Connection represents a net.Conn that uses HTTP2 frames to proxy traffic from the edge to cloudflared on the
 // origin.
 type HTTP2Connection struct {
-	conn        net.Conn
-	server      *http2.Server
-	config      *Config
-	connOptions *tunnelpogs.ConnectionOptions
-	observer    *Observer
-	connIndex   uint8
+	conn         net.Conn
+	server       *http2.Server
+	orchestrator Orchestrator
+	connOptions  *tunnelpogs.ConnectionOptions
+	observer     *Observer
+	connIndex    uint8
 	// newRPCClientFunc allows us to mock RPCs during testing
 	newRPCClientFunc func(context.Context, io.ReadWriteCloser, *zerolog.Logger) NamedTunnelRPCClient
 
@@ -49,7 +52,7 @@ type HTTP2Connection struct {
 // NewHTTP2Connection returns a new instance of HTTP2Connection.
 func NewHTTP2Connection(
 	conn net.Conn,
-	config *Config,
+	orchestrator Orchestrator,
 	connOptions *tunnelpogs.ConnectionOptions,
 	observer *Observer,
 	connIndex uint8,
@@ -61,7 +64,7 @@ func NewHTTP2Connection(
 		server: &http2.Server{
 			MaxConcurrentStreams: MaxConcurrentStreams,
 		},
-		config:               config,
+		orchestrator:         orchestrator,
 		connOptions:          connOptions,
 		observer:             observer,
 		connIndex:            connIndex,
@@ -100,7 +103,13 @@ func (c *HTTP2Connection) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	connType := determineHTTP2Type(r)
 	handleMissingRequestParts(connType, r)
 
-	respWriter, err := NewHTTP2RespWriter(r, w, connType)
+	respWriter, err := NewHTTP2RespWriter(r, w, connType, c.log)
+	if err != nil {
+		c.observer.log.Error().Msg(err.Error())
+		return
+	}
+
+	originProxy, err := c.orchestrator.GetOriginProxy()
 	if err != nil {
 		c.observer.log.Error().Msg(err.Error())
 		return
@@ -114,9 +123,17 @@ func (c *HTTP2Connection) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			respWriter.WriteErrorResponse()
 		}
 
+	case TypeConfiguration:
+		if err := c.handleConfigurationUpdate(respWriter, r); err != nil {
+			c.log.Error().Err(err)
+			respWriter.WriteErrorResponse()
+		}
+
 	case TypeWebsocket, TypeHTTP:
 		stripWebsocketUpgradeHeader(r)
-		if err := c.config.OriginProxy.ProxyHTTP(respWriter, r, connType == TypeWebsocket); err != nil {
+		// Check for tracing on request
+		tr := tracing.NewTracedRequest(r)
+		if err := originProxy.ProxyHTTP(respWriter, tr, connType == TypeWebsocket); err != nil {
 			err := fmt.Errorf("Failed to proxy HTTP: %w", err)
 			c.log.Error().Err(err)
 			respWriter.WriteErrorResponse()
@@ -131,7 +148,7 @@ func (c *HTTP2Connection) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		rws := NewHTTPResponseReadWriterAcker(respWriter, r)
-		if err := c.config.OriginProxy.ProxyTCP(r.Context(), rws, &TCPRequest{
+		if err := originProxy.ProxyTCP(r.Context(), rws, &TCPRequest{
 			Dest:    host,
 			CFRay:   FindCfRayHeader(r),
 			LBProbe: IsLBProbeRequest(r),
@@ -146,6 +163,26 @@ func (c *HTTP2Connection) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ConfigurationUpdateBody is the representation followed by the edge to send updates to cloudflared.
+type ConfigurationUpdateBody struct {
+	Version int32             `json:"version"`
+	Config  gojson.RawMessage `json:"config"`
+}
+
+func (c *HTTP2Connection) handleConfigurationUpdate(respWriter *http2RespWriter, r *http.Request) error {
+	var configBody ConfigurationUpdateBody
+	if err := json.NewDecoder(r.Body).Decode(&configBody); err != nil {
+		return err
+	}
+	resp := c.orchestrator.UpdateConfig(configBody.Version, configBody.Config)
+	bdy, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	_, err = respWriter.Write(bdy)
+	return err
+}
+
 func (c *HTTP2Connection) close() {
 	// Wait for all serve HTTP handlers to return
 	c.activeRequestsWG.Wait()
@@ -157,14 +194,16 @@ type http2RespWriter struct {
 	w           http.ResponseWriter
 	flusher     http.Flusher
 	shouldFlush bool
+	log         *zerolog.Logger
 }
 
-func NewHTTP2RespWriter(r *http.Request, w http.ResponseWriter, connType Type) (*http2RespWriter, error) {
+func NewHTTP2RespWriter(r *http.Request, w http.ResponseWriter, connType Type, log *zerolog.Logger) (*http2RespWriter, error) {
 	flusher, isFlusher := w.(http.Flusher)
 	if !isFlusher {
 		respWriter := &http2RespWriter{
-			r: r.Body,
-			w: w,
+			r:   r.Body,
+			w:   w,
+			log: log,
 		}
 		respWriter.WriteErrorResponse()
 		return nil, fmt.Errorf("%T doesn't implement http.Flusher", w)
@@ -175,6 +214,7 @@ func NewHTTP2RespWriter(r *http.Request, w http.ResponseWriter, connType Type) (
 		w:           w,
 		flusher:     flusher,
 		shouldFlush: connType.shouldFlush(),
+		log:         log,
 	}, nil
 }
 
@@ -189,6 +229,12 @@ func (rp *http2RespWriter) WriteRespHeaders(status int, header http.Header) erro
 			// This header has meaning in HTTP/2 and will be used by the edge,
 			// so it should be sent *also* as an HTTP/2 response header.
 			dest[name] = values
+		}
+
+		if h2name == tracing.IntCloudflaredTracingHeader {
+			// Add cf-int-cloudflared-tracing header outside of serialized userHeaders
+			rp.w.Header()[tracing.CanonicalCloudflaredTracingHeader] = values
+			continue
 		}
 
 		if !IsControlResponseHeader(h2name) || IsWebsocketClientHeader(h2name) {
@@ -233,7 +279,7 @@ func (rp *http2RespWriter) Write(p []byte) (n int, err error) {
 		// Implementer of OriginClient should make sure it doesn't write to the connection after Proxy returns
 		// Register a recover routine just in case.
 		if r := recover(); r != nil {
-			println(fmt.Sprintf("Recover from http2 response writer panic, error %s", debug.Stack()))
+			rp.log.Debug().Msgf("Recover from http2 response writer panic, error %s", debug.Stack())
 		}
 	}()
 	n, err = rp.w.Write(p)
@@ -249,6 +295,8 @@ func (rp *http2RespWriter) Close() error {
 
 func determineHTTP2Type(r *http.Request) Type {
 	switch {
+	case isConfigurationUpdate(r):
+		return TypeConfiguration
 	case isWebsocketUpgrade(r):
 		return TypeWebsocket
 	case IsTCPStream(r):
@@ -280,6 +328,10 @@ func isControlStreamUpgrade(r *http.Request) bool {
 
 func isWebsocketUpgrade(r *http.Request) bool {
 	return r.Header.Get(InternalUpgradeHeader) == WebsocketUpgrade
+}
+
+func isConfigurationUpdate(r *http.Request) bool {
+	return r.Header.Get(InternalUpgradeHeader) == ConfigurationUpdate
 }
 
 // IsTCPStream discerns if the connection request needs a tcp stream proxy.

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -34,6 +35,7 @@ const (
 	CredFileFlagAlias    = "cred-file"
 	CredFileFlag         = "credentials-file"
 	CredContentsFlag     = "credentials-contents"
+	TunnelTokenFlag      = "token"
 	overwriteDNSFlagName = "overwrite-dns"
 
 	LogFieldTunnelID = "tunnelID"
@@ -118,6 +120,11 @@ var (
 		Usage:   "Contents of the tunnel credentials JSON file to use. When provided along with credentials-file, this will take precedence.",
 		EnvVars: []string{"TUNNEL_CRED_CONTENTS"},
 	})
+	tunnelTokenFlag = altsrc.NewStringFlag(&cli.StringFlag{
+		Name:    TunnelTokenFlag,
+		Usage:   "The Tunnel token. When provided along with credentials, this will take precedence.",
+		EnvVars: []string{"TUNNEL_TOKEN"},
+	})
 	forceDeleteFlag = &cli.BoolFlag{
 		Name:    "force",
 		Aliases: []string{"f"},
@@ -127,7 +134,7 @@ var (
 	}
 	selectProtocolFlag = altsrc.NewStringFlag(&cli.StringFlag{
 		Name:    "protocol",
-		Value:   "auto",
+		Value:   connection.AutoSelectFlag,
 		Aliases: []string{"p"},
 		Usage:   fmt.Sprintf("Protocol implementation to connect with Cloudflare's edge network. %s", connection.AvailableProtocolFlagMessage),
 		EnvVars: []string{"TUNNEL_TRANSPORT_PROTOCOL"},
@@ -597,6 +604,7 @@ func buildRunCommand() *cli.Command {
 		credentialsContentsFlag,
 		selectProtocolFlag,
 		featuresFlag,
+		tunnelTokenFlag,
 	}
 	flags = append(flags, configureProxyFlags(false)...)
 	return &cli.Command{
@@ -627,14 +635,6 @@ func runCommand(c *cli.Context) error {
 	if c.NArg() > 1 {
 		return cliutil.UsageError(`"cloudflared tunnel run" accepts only one argument, the ID or name of the tunnel to run.`)
 	}
-	tunnelRef := c.Args().First()
-	if tunnelRef == "" {
-		// see if tunnel id was in the config file
-		tunnelRef = config.GetConfiguration().TunnelID
-		if tunnelRef == "" {
-			return cliutil.UsageError(`"cloudflared tunnel run" requires the ID or name of the tunnel to run as the last command line argument or in the configuration file.`)
-		}
-	}
 
 	if c.String("hostname") != "" {
 		sc.log.Warn().Msg("The property `hostname` in your configuration is ignored because you configured a Named Tunnel " +
@@ -642,7 +642,38 @@ func runCommand(c *cli.Context) error {
 			"your origin will not be reachable. You should remove the `hostname` property to avoid this warning.")
 	}
 
-	return runNamedTunnel(sc, tunnelRef)
+	// Check if token is provided and if not use default tunnelID flag method
+	if tokenStr := c.String(TunnelTokenFlag); tokenStr != "" {
+		if token, err := ParseToken(tokenStr); err == nil {
+			return sc.runWithCredentials(token.Credentials())
+		}
+
+		return cliutil.UsageError("Provided Tunnel token is not valid.")
+	} else {
+		tunnelRef := c.Args().First()
+		if tunnelRef == "" {
+			// see if tunnel id was in the config file
+			tunnelRef = config.GetConfiguration().TunnelID
+			if tunnelRef == "" {
+				return cliutil.UsageError(`"cloudflared tunnel run" requires the ID or name of the tunnel to run as the last command line argument or in the configuration file.`)
+			}
+		}
+
+		return runNamedTunnel(sc, tunnelRef)
+	}
+}
+
+func ParseToken(tokenStr string) (*connection.TunnelToken, error) {
+	content, err := base64.StdEncoding.DecodeString(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var token connection.TunnelToken
+	if err := json.Unmarshal(content, &token); err != nil {
+		return nil, err
+	}
+	return &token, nil
 }
 
 func runNamedTunnel(sc *subcommandContext, tunnelRef string) error {
@@ -650,9 +681,6 @@ func runNamedTunnel(sc *subcommandContext, tunnelRef string) error {
 	if err != nil {
 		return errors.Wrap(err, "error parsing tunnel ID")
 	}
-
-	sc.log.Info().Str(LogFieldTunnelID, tunnelID.String()).Msg("Starting tunnel")
-
 	return sc.run(tunnelID)
 }
 
@@ -684,6 +712,59 @@ func cleanupCommand(c *cli.Context) error {
 	}
 
 	return sc.cleanupConnections(tunnelIDs)
+}
+
+func buildTokenCommand() *cli.Command {
+	return &cli.Command{
+		Name:               "token",
+		Action:             cliutil.ConfiguredAction(tokenCommand),
+		Usage:              "Fetch the credentials token for an existing tunnel (by name or UUID) that allows to run it",
+		UsageText:          "cloudflared tunnel [tunnel command options] token [subcommand options] TUNNEL",
+		Description:        "cloudflared tunnel token will fetch the credentials token for a given tunnel (by its name or UUID), which is then used to run the tunnel. This command fails if the tunnel does not exist or has been deleted. Use the flag `cloudflared tunnel token --cred-file /my/path/file.json TUNNEL` to output the token to the credentials JSON file. Note: this command only works for Tunnels created since cloudflared version 2022.3.0",
+		Flags:              []cli.Flag{credentialsFileFlagCLIOnly},
+		CustomHelpTemplate: commandHelpTemplate(),
+	}
+}
+
+func tokenCommand(c *cli.Context) error {
+	sc, err := newSubcommandContext(c)
+	if err != nil {
+		return errors.Wrap(err, "error setting up logger")
+	}
+
+	warningChecker := updater.StartWarningCheck(c)
+	defer warningChecker.LogWarningIfAny(sc.log)
+
+	if c.NArg() != 1 {
+		return cliutil.UsageError(`"cloudflared tunnel token" requires exactly 1 argument, the name or UUID of tunnel to fetch the credentials token for.`)
+	}
+	tunnelID, err := sc.findID(c.Args().First())
+	if err != nil {
+		return errors.Wrap(err, "error parsing tunnel ID")
+	}
+
+	token, err := sc.getTunnelTokenCredentials(tunnelID)
+	if err != nil {
+		return err
+	}
+
+	if path := c.String(CredFileFlag); path != "" {
+		credentials := token.Credentials()
+		err := writeTunnelCredentials(path, &credentials)
+		if err != nil {
+			return errors.Wrapf(err, "error writing token credentials to JSON file in path %s", path)
+		}
+
+		return nil
+	}
+
+	encodedToken, err := token.Encode()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s", encodedToken)
+	return nil
 }
 
 func buildRouteCommand() *cli.Command {
